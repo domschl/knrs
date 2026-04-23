@@ -4,20 +4,51 @@ knrs.repl.repl — The interactive REPL loop.
 
 from __future__ import annotations
 
+import atexit
 import logging
+import readline
 import sys
 
 from rich.console import Console
 from rich.prompt import Prompt
 
 from knrs.config import KnrsConfig
+from knrs.paths import knrs_history_file
 from knrs.repl.commands import COMMANDS
 
 logger = logging.getLogger(__name__)
 console = Console()
 
+def _setup_readline():
+    """Configure readline for history and tab completion."""
+    hist = knrs_history_file()
+    if hist.exists():
+        try:
+            readline.read_history_file(str(hist))
+        except Exception as e:
+            logger.warning("Could not read history file %s: %s", hist, e)
+
+    readline.set_history_length(1000)
+    atexit.register(lambda: readline.write_history_file(str(hist)))
+
+    def completer(text: str, state: int) -> str | None:
+        # Only complete if the text starts with /
+        if not text.startswith("/"):
+            return None
+        options = [c for c in COMMANDS if c.startswith(text)]
+        if state < len(options):
+            return options[state]
+        return None
+
+    readline.set_completer(completer)
+    if "libedit" in readline.__doc__:
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
+
 def run_repl(cfg: KnrsConfig):
     """Start the interactive REPL."""
+    _setup_readline()
     console.print("[bold blue]Welcome to knrs REPL![/bold blue]")
     console.print("Type [cyan]/help[/cyan] for available commands, or [cyan]/exit[/cyan] to quit.")
     
