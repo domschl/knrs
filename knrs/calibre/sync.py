@@ -64,6 +64,7 @@ def plan_sync(
     calibre_index: dict[str, CalibreBook],
     markdown_index: dict[str, dict],
     markdown_root: Path,
+    icon_root: Path,
 ) -> list[SyncAction]:
     """
     Compare Calibre and existing Markdown state. Return a list of SyncActions.
@@ -130,8 +131,12 @@ def plan_sync(
             book.__dict__.get(k, "") != mi["metadata"].get(k, "")
             for k in _METADATA_KEYS
         )
+        # Check for missing icon or legacy 'icon' field in frontmatter
+        icon_path = icon_root / f"{uuid}.jpg"
+        has_legacy_icon = "icon" in mi["metadata"]
+        
         # Also update if source_hash was missing from the frontmatter
-        if not mi["source_hash"] or meta_changed:
+        if not mi["source_hash"] or meta_changed or not icon_path.exists() or has_legacy_icon:
             actions.append(SyncAction(
                 action="UPDATE_METADATA", uuid=uuid, title=book.title,
                 old_path=mi["path"],
@@ -203,9 +208,15 @@ def _execute_action(
 
     elif action.action == "REMOVE":
         logger.info("%s REMOVE: %s", prefix, action.title)
-        if not dry_run and action.old_path:
-            action.old_path.unlink(missing_ok=True)
-            logger.debug("Removed %s", action.old_path)
+        if not dry_run:
+            if action.old_path:
+                action.old_path.unlink(missing_ok=True)
+                logger.debug("Removed %s", action.old_path)
+            # Also remove the icon
+            icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
+            if icon_path.exists():
+                icon_path.unlink(missing_ok=True)
+                logger.debug("Removed icon %s", icon_path)
 
     elif action.action in ("RENAME", "MOVE"):
         logger.info(
@@ -229,6 +240,13 @@ def _execute_action(
             _update_meta_fields(action.old_path, action.book,
                                 extra={"source_hash": action.source_hash,
                                        "source_format": action.source_format})
+            # Ensure icon exists
+            icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
+            if not icon_path.exists() and action.book.cover_path:
+                generate_cover_icon(
+                    action.book.cover_path, cfg.book_cover_icons,
+                    action.book.uuid, dry_run=False
+                )
 
 
 def _update_meta_fields(md_path: Path, book: CalibreBook, extra: dict | None = None) -> None:
@@ -247,7 +265,26 @@ def _update_meta_fields(md_path: Path, book: CalibreBook, extra: dict | None = N
     }
     if extra:
         updates.update(extra)
-    update_frontmatter_inplace(md_path, {k: v for k, v in updates.items() if v not in ("", [], None)})
+    # Always try to remove legacy 'icon' field
+    update_frontmatter_inplace(
+        md_path, 
+        {k: v for k, v in updates.items() if v not in ("", [], None)},
+        remove_fields=["icon"]
+    )
+
+
+def _cleanup_icon_debris(icon_root: Path, active_uuids: set[str], dry_run: bool):
+    """Remove icons that don't belong to any active book UUID."""
+    if not icon_root.exists():
+        return
+    for icon_path in icon_root.glob("*.jpg"):
+        uuid = icon_path.stem
+        if uuid not in active_uuids:
+            if dry_run:
+                logger.info("[dry-run] REMOVE DEBRIS ICON: %s", icon_path.name)
+            else:
+                logger.info("Removing debris icon: %s", icon_path.name)
+                icon_path.unlink(missing_ok=True)
 
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -278,7 +315,7 @@ def run_sync(
     markdown_index = scan_existing_markdowns(cfg.markdown_books)
 
     logger.info("Phase 1: Building sync plan…")
-    actions = plan_sync(calibre_index, markdown_index, cfg.markdown_books)
+    actions = plan_sync(calibre_index, markdown_index, cfg.markdown_books, cfg.book_cover_icons)
 
     collisions = _check_planned_collisions(actions, markdown_index)
     if collisions:
@@ -343,5 +380,8 @@ def run_sync(
             for a in parallel:
                 done += 1
                 _execute_action(a, cfg, summarizer_submodule, dry_run=False, idx=done, total=total)
+
+    # Cleanup debris icons
+    _cleanup_icon_debris(cfg.book_cover_icons, set(calibre_index.keys()), dry_run=dry_run)
 
     logger.info("Sync complete.")
