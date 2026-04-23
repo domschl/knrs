@@ -74,16 +74,15 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
             # Process data rows
             while i < len(lines) and lines[i].strip().startswith('|'):
                 row = _parse_row(lines[i])
-                if row and row[0] != 'Date': # Skip header-looking rows
+                # A valid row must have the same column count as the header
+                # and the first column must not be 'Date' (to skip potential repeated headers)
+                if len(row) == len(header) and row[0] != 'Date':
                     date_val = row[0]
                     if date_val:
                         try:
                             start, end = parse_interval(date_val)
-                            # Create data dict mapping headers to row values
-                            event_data = {}
-                            for col_idx, col_name in enumerate(header):
-                                if col_idx < len(row):
-                                    event_data[col_name] = row[col_idx]
+                            # Map columns to their header names
+                            event_data = {header[j]: row[j] for j in range(len(header))}
                             
                             events.append(TimelineEvent(
                                 start_year=start,
@@ -91,8 +90,9 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
                                 source_file=rel_path,
                                 data=event_data
                             ))
-                        except ValueError as e:
-                            logger.warning("Skipping invalid date '%s' in %s: %s", date_val, path.name, e)
+                        except ValueError:
+                            # Not a date row, just skip it
+                            pass
                 i += 1
         else:
             i += 1
