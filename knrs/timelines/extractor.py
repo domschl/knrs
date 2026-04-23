@@ -90,9 +90,8 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
                                 source_file=rel_path,
                                 data=event_data
                             ))
-                        except ValueError:
-                            # Not a date row, just skip it
-                            pass
+                        except ValueError as e:
+                            logger.error("Invalid date format '%s' in %s: %s", date_val, path.name, e)
                 i += 1
         else:
             i += 1
