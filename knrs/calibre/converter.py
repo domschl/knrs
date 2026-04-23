@@ -113,7 +113,7 @@ def build_markdown_with_frontmatter(book: CalibreBook, md_body: str) -> str:
     return f"---\n{header}---\n{content}"
 
 
-def update_frontmatter_inplace(md_path: Path, updates: dict) -> None:
+def update_frontmatter_inplace(md_path: Path, updates: dict, remove_fields: list[str] | None = None) -> None:
     """Update specific fields in a file's YAML frontmatter without reconverting."""
     text = md_path.read_text(encoding="utf-8")
     fm_raw, content = _split_frontmatter(text)
@@ -122,6 +122,9 @@ def update_frontmatter_inplace(md_path: Path, updates: dict) -> None:
     except Exception:
         meta = {}
     meta.update({k: v for k, v in updates.items() if v not in (None, "", [], {})})
+    if remove_fields:
+        for field in remove_fields:
+            meta.pop(field, None)
     header = yaml.dump(meta, default_flow_style=False, allow_unicode=True, indent=2)
     atomic_write(md_path, f"---\n{header}---\n{content}")
 

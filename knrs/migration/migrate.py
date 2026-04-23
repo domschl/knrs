@@ -83,3 +83,11 @@ def _migrate_dir(src_root: Path, dst_root: Path, dry_run: bool):
                 continue
             shutil.move(src_path, dst_path)
             logger.debug("Moved %s -> %s", src_path, dst_path)
+            
+            # Post-move cleanup for migrated markdowns: remove legacy base64 'icon'
+            if dst_path.suffix == ".md":
+                from knrs.calibre.converter import update_frontmatter_inplace
+                try:
+                    update_frontmatter_inplace(dst_path, {}, remove_fields=["icon"])
+                except Exception as e:
+                    logger.warning("Failed to clean frontmatter for %s: %s", dst_path, e)
