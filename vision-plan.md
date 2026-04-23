@@ -1,109 +1,184 @@
-## LLM enabled knowledge base Wiki
+# LLM-Enabled Knowledge-Base Wiki — Vision Plan
 
-`knrs` is a project that is supposed to synthesize three preciding projects that have overlapping functionality.
+## Purpose
 
-Idea is to compile provided data (books, notes, see below, sources of truth) into a two-pronged Markdown wiki that is maintained in part by human (`Wiki/Notes`) and in part by LLM models or algorithmic conversions (`Wiki/AINotes`)
+`knrs` synthesises three preceding projects into a unified, LLM-assisted knowledge-base wiki.
+The core idea is to compile provided data (books, personal notes — the *sources of truth*)
+into a two-pronged Markdown wiki that is maintained:
 
-## General remarks
+- **`Wiki/Notes`** — by the human user (read-only for `knrs`), and  
+- **`Wiki/AINotes`** — automatically, by LLM models or algorithmic conversion pipelines.
 
-- Implementation language is Python
-- Project and package management via `uv`
-- Ideas from Andrej Karpathy's llm-wiki <https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f> can be incorporated as fitting.
+---
 
-## Previous projects
+## General Remarks
 
-- EbookTools (in `previous/EbookTools`): use a Calibre library as source and creates Markdown files for each book containing the book's metadata and a link to the Calibre library. It creates a copy of Epub and PDF files organized by Calibre's `series` metadata. This is the oldest project.
-- LocalResearch (in `previous/LocalResearch`): uses Calibre library as source for TXT and PDF files that are indexed using vector embeddings. Extracts timeline information from tables in a Markdown notes collection. The time-format used is described in `previous/LocalResearch/IndraTimeFormat.md`. Access is provided via console (`previous/LocalResearch/research_console.py`) and a simple web client that provides 3D visualization of the embedding spaces.
-- Summarizer (in `previous/Summarizer`): uses Calibre library as source and converts both epub and pdf documents into markdown text (`previous/Summarizer/calibre_sync.py`). In a second step, GEMMA 4 models are used to generate summaries for all texts (`previous/Summarizer/summarizer_sync`). This is the latest project of the three previous projects.
+- **Implementation language**: Python ≥ 3.13
+- **Package management**: `uv`
+- **Configuration**: JSON files stored in `~/.config/knrs/`
+- **Version control**: Git (manual human responsibility; not automated)
+- **Design inspiration**: Andrej Karpathy's
+  [llm-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+  ideas may be incorporated where fitting.
 
-## Synthesis architecture
+---
 
-### Sources of truth
+## Predecessor Projects
 
-The data-sources are read-only for `knrs`, and are only modified by Human
+All three projects are included as Git submodules under `previous/` for reference and
+selective code reuse.
 
-- Calibre: A Calibre libre containing documents in EPUB, PDF, or MD format. Interaction with Calibre is file-system only, for each book we look at `metadata.opf`, `cover.jpg`, and documents in MD (prio 1), EPUB (prio 2), or PDF (prio 3) format.
-- Notes: (`Wiki/Notes`) A human-maintained Wiki collection of Markdown documents that include tables with timelines that use the IndraTime format.
+| Project | Location | Core Role |
+|---------|----------|-----------|
+| **EbookTools** | `previous/EbookTools` | Calibre metadata export, cover icons, BookLibrary copy organised by `series`, timeline extraction from Markdown tables using IndraTime format |
+| **LocalResearch** | `previous/LocalResearch` | Vector-embedding index over TXT/PDF, 3D embedding visualisation, research console with IndraTime timeline compilation |
+| **Summarizer** | `previous/Summarizer` | Calibre → Markdown conversion (Docling / Pandoc), Gemma 4 summarisation, two-phase sync, wiki-compatible naming (80-char cap, UUID tracking, SHA-256 hashing) |
 
-Changes in the sources of truth need to propagate to all derived data. This includes deleting derived data, if the source has been deleted.
+---
 
-Main-key is the UUID metadata field in Calibre's metadata, or the UUID field in the frontmatter of human Wiki. Wiki entries without UUID are ignored. 
+## Definitions & Terminology
 
-### Derived data
+| Term | Definition |
+|------|-----------|
+| **Calibre Library** | A Calibre library directory; read-only source of truth for book data. Interaction is filesystem-only: `metadata.opf`, `cover.jpg`, and book files in MD (priority 1), EPUB (priority 2), PDF (priority 3). |
+| **UUID** | The stable Calibre book identifier, stored in `metadata.opf`. Also used as primary key in frontmatter of human-Wiki notes. Notes without UUID are ignored. |
+| **IndraTime** | A string-based deep-time format used in human wiki timeline tables, covering cosmological to historical dates. Documented in `previous/LocalResearch/IndraTimeFormat.md`. |
+| **Wiki-link** | An Obsidian/Emacs `[[filename]]` style cross-reference, usable in both `Wiki/Notes` and `Wiki/AINotes`. |
+| **MarkdownBook** | A Markdown document generated from a Calibre book; the canonical intermediate text representation. |
+| **BookSummary** | An LLM-generated summary Markdown document, derived from a MarkdownBook. |
+| **BookCoverIcon** | A resized cover thumbnail stored as `<UUID>.jpg`. |
+| **Sync** | A two-phase *plan-then-execute* operation that propagates changes from a source of truth to all derived data, including deletion of orphaned derived files. |
+| **KnrsData** | Root directory for all intermediate data (configurable path). |
+| **Wiki** | Root directory for the resulting wiki (configurable path). |
 
-#### Intermediate data
+---
 
-- MarkdownBooks: For each Calibre book, a Markdown representation is generated (using the strategy from `previous/Summarizer/calibre_sync.py`). This involves OCR (docling) or file-conversion (pandoc), if no Markdown document is in the Calibre library
-- BookCoverIcons: For each book, a cover icon jpg is generated (UUID.jpg)
-- Summary: For each book, a summary is generated, using the Markdown representation as source (`previous/Summarizer/
-- Timelines: The timeline information is compiled from human's wiki (see `previous/LocalResearch/research_console.py`)
-- BookLibrary: A copy of PDF and EPUB documents from the Calibre library arranged by `series` metadata as directory structure (functionality of `previous/EbookTools`) as backup.
-- VectorDB: Embeddings calculated from MarkdownBooks (and `Wiki/Notes`?). First step: use embeddings in similar fashion as `previous/LocalResearch`, but restrict to one embeddings model (embeddings gemma 300 for start). Evaluate the use of tool `qmd` instead?
+## Sources of Truth
 
-Example file-structure for the intermediate data:
+Sources of truth are **read-only** for `knrs`; they are only modified by the human user.
+
+### Calibre Library
+
+- Documents in EPUB, PDF, or MD format.
+- Each book identified by UUID (`metadata.opf`).
+- Interaction: filesystem-only (no Calibre API / DB).
+- Format priority for conversion: MD > EPUB > PDF.
+
+### Human Wiki (`Wiki/Notes`)
+
+- A human-maintained collection of Markdown documents.
+- May contain YAML frontmatter with a `uuid` field; entries without `uuid` are **ignored** by `knrs`.
+- May contain Markdown tables with timestamps in **IndraTime** format (used for timeline extraction).
+- Contains wiki-links (`[[…]]`) to `Wiki/AINotes` entries.
+
+### Change Propagation
+
+Changes in any source of truth must propagate to **all derived data**, including deletion of orphaned derived files when a source entry is removed.
+
+---
+
+## Derived Data
+
+### Intermediate Data (stored in `KnrsData/`)
+
+| Artifact | Location | Description | Source |
+|----------|----------|-------------|--------|
+| **MarkdownBooks** | `KnrsData/MarkdownBooks/<series>/` | Markdown text of each Calibre book. Generated via Pandoc (EPUB) or Docling (PDF/OCR). Frontmatter contains UUID, SHA-256 hash of source file, source format, and converter version. | Calibre Library |
+| **BookCoverIcons** | `KnrsData/BookCoverIcons/` | Cover thumbnails as `<UUID>.jpg`. | Calibre Library (`cover.jpg`) |
+| **BookSummaries** | `KnrsData/BookSummaries/<series>/` | LLM-generated summaries, prefixed `Summary of …`. Frontmatter contains source MarkdownBook SHA-256 hash and summary model version. | MarkdownBooks |
+| **BookLibrary** | `KnrsData/BookLibrary/<series>/` | Backup copy of EPUB and PDF files from Calibre, organised by `series`. | Calibre Library |
+| **Timelines** | `KnrsData/Timelines/timelines.json` | Compiled timeline events in IndraTime format, extracted from `Wiki/Notes` tables. | Human Wiki |
+| **VectorDB** | `KnrsData/VectorDB/` | Embedding vectors for semantic search. Initial model: `gemma-embedding-300`. Scope: MarkdownBooks (and optionally `Wiki/Notes`). | MarkdownBooks (+ Notes) |
+
+#### Example `KnrsData/` layout
 
 ```
-KnrsData
-├── BookCoverIcons
-│   ├── aa34d602-c543-43b5-8624-4a484b973b40.jpg
-│   └── aa3e3690-ab4b-4721-aacd-6b98417b4e69.jpg
-├── BookLibrary
-│   ├── Archaeology
-│   │   ├── Summary of History of Troja.epub
-│   │   └── Summary of History of Troja.pdf
-│   ├── Physics
-│   └── Science Fiction
-├── BookSummaries
-│   ├── Archaeology
-│   │   └── Summary of History of Troja.md
-│   ├── Physics
-│   └── Science Fiction
-├── MarkdownBooks
-│   ├── Archaeology
-│   │   └── History of Troja.md
-│   ├── Physics
-│   └── Science Fiction
-├── Timelines
-│   └── timelines.json
-└── VectorDB
+KnrsData/
+├── BookCoverIcons/
+│   ├── aa34d602-c543-43b5-8624-4a484b973b40.jpg
+│   └── aa3e3690-ab4b-4721-aacd-6b98417b4e69.jpg
+├── BookLibrary/
+│   ├── Archaeology/
+│   │   ├── History of Troja.epub
+│   │   └── History of Troja.pdf
+│   ├── Physics/
+│   └── Science Fiction/
+├── BookSummaries/
+│   ├── Archaeology/
+│   │   └── Summary of History of Troja - AuthorName.md
+│   ├── Physics/
+│   └── Science Fiction/
+├── MarkdownBooks/
+│   ├── Archaeology/
+│   │   └── History of Troja - AuthorName.md
+│   ├── Physics/
+│   └── Science Fiction/
+├── Timelines/
+│   └── timelines.json
+└── VectorDB/
 ```
 
-#### Resulting data
+### Resulting Data (stored in `Wiki/AINotes/`)
 
-The result will be a Markdown-based wiki that is maintained in half by humans (`Wiki/Notes`) and in half by this program (`Wiki/AINotes`). Both Wikis can use `[[wiki-links]]` to reference content.
+`Wiki/AINotes/Books/<series>/` contains one Markdown document per Calibre book. Each document:
 
-Example file-structure:
+1. **YAML frontmatter** — full Calibre metadata (title, author, series, tags, UUID, …)
+2. **Cover icon** — embedded thumbnail linking back to the Calibre library location
+3. **Book summary** — rendered content of the corresponding `BookSummary`
+4. **Description** — the book description from Calibre metadata
+
+The full book text is **not** included in the Wiki (too large). Access to book content is via the VectorDB (MCP or similar interface).
+
+#### Example `Wiki/` layout
 
 ```
-Wiki
-├── AINotes
-│   └── Books
-│       ├── Archaeology
-│       │   └── History of Troja.md
-│       ├── Physics
-│       └── Science Fiction
-└── Notes    # read-only! maintained by human
+Wiki/
+├── AINotes/
+│   └── Books/
+│       ├── Archaeology/
+│       │   └── History of Troja - AuthorName.md
+│       ├── Physics/
+│       └── Science Fiction/
+└── Notes/                  # read-only — maintained by human
 ```
 
-Automatically and algorithmically created will the the `Wiki/AINotes/Books` folder structure. It contains, organized by `series`, Markdown documents for each calibre book. Each markdown document contains 1. frontmatter that contains the Calibre metadata, and in the Markdown body: 2. Icon of Cover and link to Calibre library, 3. the summary of the book content (from `BookSummaries`), and 4. the description from the Calibre metadata. (1., 2., 4.) are generated in a manner similar to the 'notes' functionality of `previous/EbookTools/ebook_tools.py`. The full book text is not part of the Wiki structure (far too large). Access to book content will be via VectorDB (via MCP or similar)
+---
 
-## User interfaces
+## Naming Convention
 
-### Repl implementation
+- Filenames derived from Calibre metadata: `<Title> - <Author>.md`
+- Maximum base length: **80 characters** (before `.md` extension)
+- Trailing series numbering (arabic or roman) is preserved during truncation
+- Unsafe filesystem characters are sanitised (`:` → ` —`, `/` → `-`, etc.)
+- Summary files are prefixed: `Summary of <base-filename>.md`
+- Collision detection is **case-insensitive**; any collision is a **fatal error** requiring user intervention in Calibre metadata
+- UUID is used as the stable identifier across renames and moves
 
-The main interface is a command line repl. Der repl will be implemented with the idea in mind to extend it into an agentic tool connected to an llm. In the firsts phase, no LLM connection is used (we rely on existing third party agentic tools for starting, s.b.), and command necessary to initiate data transformations are entered as slash-command just as with similar third party agentic tools. A suitable set of command that initates the transformation of the documents from source of truth into the different intermediate and resulting data formats needs to be defined. Differential and successive changes to the sources of truth must be propagated efficiently.
+---
 
-### Compatibility with third party tools
+## User Interface
 
-- Markdown tools such 'Obsidian' or 'Emacs' can be used to work with the `Wiki` knowledge base. Both parts: `Wiki/AINotes` and `Wiki/Notes` are standard wiki markdown files and may be interlinked with `[[wiki-links]]`.
-- Agentic coding tools such as `gemini-cli` or similar can be used to create and alter `Wiki` parts.
+### REPL
 
-## Administration
+The primary interface is a **command-line REPL** (Read–Eval–Print Loop).
 
-The project `previous/Summarizer` has already produced a large number of `MarkdownBooks` and corresponding `BookSummaries`. The existing data needs to be migrated into this project.
+Design goals:
 
-Configuration data (e.g. location of sources of truth, intermediate and resulting data) shall be stored in JSON files.
+- Slash-commands (e.g. `/sync`, `/status`, `/dry-run`) to initiate data transformations
+- Progress display (e.g. `2/200 converted`)
+- Differential / incremental updates: only changed sources trigger re-processing
+- Designed for future extension into a full LLM-connected agentic tool (no LLM connection in Phase 1)
 
-At a later point, the conversion pipeline might run as a (linux systemd) service, initiated on file-changes at the sources of truth.
+### Third-Party Tool Compatibility
 
-Backup and version management for all markdown and image files is done via Git and is not automated (manual human responsibility)
+- **Obsidian / Emacs** — both `Wiki/AINotes` and `Wiki/Notes` are standard wiki Markdown; `[[wiki-links]]` work out of the box
+- **Agentic coding tools** (`gemini-cli`, etc.) — can read and alter `Wiki` parts directly
+
+---
+
+## Migration & Administration
+
+- The `previous/Summarizer` project has already produced a significant corpus of `MarkdownBooks` and `BookSummaries`; these must be migrated (renamed / moved) to the new directory structure.
+- All configuration (paths for sources of truth, intermediate data, wiki) is stored in JSON files under `~/.config/knrs/`.
+- Backup and version management of all Markdown and image files is via **Git** (manual, human responsibility).
+- Future option: conversion pipeline as a **Linux systemd** service triggered by filesystem watches on the sources of truth.
