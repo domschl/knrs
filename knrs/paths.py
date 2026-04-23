@@ -47,3 +47,8 @@ def knrs_config_dir() -> Path:
 def knrs_config_file() -> Path:
     """Return the path to the main config file ~/.config/knrs/knrs.json."""
     return knrs_config_dir() / "knrs.json"
+
+
+def knrs_history_file() -> Path:
+    """Return the path to the REPL history file ~/.config/knrs/history."""
+    return knrs_config_dir() / "history"
