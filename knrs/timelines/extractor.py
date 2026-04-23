@@ -19,12 +19,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TimelineEvent:
-    date_str: str
-    event: str
-    description: str
-    source_file: str
     start_year: float
     end_year: float
+    source_file: str
+    data: dict[str, str]
+
+    def to_dict(self) -> dict:
+        """Return a flattened dictionary for JSON serialization."""
+        d = {
+            "start_year": self.start_year,
+            "end_year": self.end_year,
+            "source_file": self.source_file,
+        }
+        d.update(self.data)
+        return d
+
+def _parse_row(line: str) -> list[str]:
+    """Parse a Markdown table row into a list of cell contents."""
+    parts = [p.strip() for p in line.split('|')]
+    if parts and not parts[0]:
+        parts.pop(0)
+    if parts and not parts[-1]:
+        parts.pop(-1)
+    return parts
 
 def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
     """Extract timeline events from a single Markdown file."""
@@ -43,44 +60,36 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        if line.startswith('|') and 'Date' in line and 'Event' in line:
-            # Found a potential header
-            header = [c.strip() for c in line.split('|') if c.strip()]
-            try:
-                date_idx = header.index('Date')
-                event_idx = header.index('Event')
-                desc_idx = header.index('Description') if 'Description' in header else -1
-            except ValueError:
+        if line.startswith('|') and 'Date' in line:
+            header = _parse_row(line)
+            if not header or header[0] != 'Date':
                 i += 1
                 continue
             
-            # Skip separator line if it exists
+            # Skip separator line if it exists (e.g. |---|---|)
             i += 1
-            if i < len(lines) and re.match(r'^|[ \-:]+|', lines[i].strip()):
+            if i < len(lines) and (lines[i].strip().startswith('|') and '-' in lines[i]):
                 i += 1
             
             # Process data rows
             while i < len(lines) and lines[i].strip().startswith('|'):
-                row = [c.strip() for c in lines[i].split('|')]
-                # Split creates empty strings at start/end if line is | a | b |
-                if row[0] == '': row = row[1:]
-                if row and row[-1] == '': row = row[:-1]
-                
-                if len(row) > max(date_idx, event_idx):
-                    date_val = row[date_idx]
-                    event_val = row[event_idx]
-                    desc_val = row[desc_idx] if desc_idx != -1 and len(row) > desc_idx else ""
-                    
-                    if date_val and event_val and date_val != 'Date':
+                row = _parse_row(lines[i])
+                if row and row[0] != 'Date': # Skip header-looking rows
+                    date_val = row[0]
+                    if date_val:
                         try:
                             start, end = parse_interval(date_val)
+                            # Create data dict mapping headers to row values
+                            event_data = {}
+                            for col_idx, col_name in enumerate(header):
+                                if col_idx < len(row):
+                                    event_data[col_name] = row[col_idx]
+                            
                             events.append(TimelineEvent(
-                                date_str=date_val,
-                                event=event_val,
-                                description=desc_val,
-                                source_file=rel_path,
                                 start_year=start,
-                                end_year=end
+                                end_year=end,
+                                source_file=rel_path,
+                                data=event_data
                             ))
                         except ValueError as e:
                             logger.warning("Skipping invalid date '%s' in %s: %s", date_val, path.name, e)
@@ -113,4 +122,4 @@ def run_extraction(notes_path: Path, output_file: Path) -> None:
     logger.info("Extracted %d events. Saving to %s", len(all_events), output_file)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w', encoding='utf-8') as f:
-        json.dump([asdict(e) for e in all_events], f, indent=2)
+        json.dump([e.to_dict() for e in all_events], f, indent=2)
