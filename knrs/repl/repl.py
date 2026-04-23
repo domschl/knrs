@@ -10,7 +10,6 @@ import readline
 import sys
 
 from rich.console import Console
-from rich.prompt import Prompt
 
 from knrs.config import KnrsConfig
 from knrs.paths import knrs_history_file
@@ -18,6 +17,10 @@ from knrs.repl.commands import COMMANDS
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+# Readline-safe colored prompt: \001 and \002 markers tell readline 
+# which characters are non-printing escape codes.
+REPL_PROMPT = "\001\x1b[1;32m\002knrs\001\x1b[0m\002 "
 
 def _setup_readline():
     """Configure readline for history and tab completion."""
@@ -54,7 +57,7 @@ def run_repl(cfg: KnrsConfig):
     
     while True:
         try:
-            line = Prompt.ask("[bold green]knrs[/bold green]")
+            line = input(REPL_PROMPT)
             line = line.strip()
             
             if not line:
