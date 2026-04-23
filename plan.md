@@ -8,6 +8,7 @@ Idea is to compile provided data (books, notes, see below, sources of truth) int
 
 - Implementation language is Python
 - Project and package management via `uv`
+- Ideas from Andrej Karpathy's llm-wiki <https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f> can be incorporated as fitting.
 
 ## Previous projects
 
