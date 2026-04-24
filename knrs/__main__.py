@@ -105,12 +105,12 @@ def main() -> None:
         
     elif args.command == "index":
         from knrs.vector.indexer import KnrsIndexer
-        KnrsIndexer(cfg.vector_db).run_indexing(cfg.markdown_books)
+        KnrsIndexer(cfg).run_indexing(cfg.markdown_books)
         
     elif args.command == "search":
         from knrs.vector.search import KnrsSearcher
         query = " ".join(args.query)
-        results = KnrsSearcher(cfg.vector_db).search(query)
+        results = KnrsSearcher(cfg).search(query)
         for r in results:
             print(f"[{r.score:.4f}] {r.path}\n{r.text[:200]}...\n")
 

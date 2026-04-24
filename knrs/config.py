@@ -44,6 +44,7 @@ class KnrsConfig:
     wiki_path: Path
     target_series: list[str] = field(default_factory=list)
     summarizer_name: str = "summarizer_linux"
+    embedder_name: str = "embedder_hf"
 
     # ------------------------------------------------------------------ #
     # Derived path helpers                                                 #
@@ -129,6 +130,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(summarizer_name, str):
         raise ValueError("Config key 'summarizer_name' must be a string.")
 
+    embedder_name = raw.get("embedder_name", "embedder_hf")
+    if not isinstance(embedder_name, str):
+        raise ValueError("Config key 'embedder_name' must be a string.")
+
     cfg = KnrsConfig(
         calibre_path=resolve(raw["calibre_path"]),
         notes_path=resolve(raw["notes_path"]),
@@ -136,6 +141,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         wiki_path=resolve(raw["wiki_path"]),
         target_series=target_series,
         summarizer_name=summarizer_name,
+        embedder_name=embedder_name,
     )
 
     logger.debug("Config loaded from %s", path)
@@ -145,6 +151,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  wiki_path:       %s", cfg.wiki_path)
     logger.debug("  target_series:   %s", cfg.target_series or "(all)")
     logger.debug("  summarizer_name: %s", cfg.summarizer_name)
+    logger.debug("  embedder_name:   %s", cfg.embedder_name)
 
     return cfg
 
@@ -166,6 +173,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("wiki_path", str(cfg.wiki_path)),
         ("target_series", ", ".join(cfg.target_series) or "(all)"),
         ("summarizer_name", cfg.summarizer_name),
+        ("embedder_name", cfg.embedder_name),
     ]
     for key, val in rows:
         table.add_row(key, val)

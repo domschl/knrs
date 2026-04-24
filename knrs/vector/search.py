@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from sentence_transformers import SentenceTransformer, util
+
+from knrs.vector.engine import get_embeddings
+from knrs.config import KnrsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +23,14 @@ class SearchResult:
     score: float
 
 class KnrsSearcher:
-    def __init__(self, db_dir: Path):
-        self.db_dir = db_dir
+    def __init__(self, config: KnrsConfig):
+        self.config = config
+        self.db_dir = config.vector_db
         self.index_file = self.db_dir / "index.npy"
         self.meta_file = self.db_dir / "index.json"
         
         self.embeddings = None
         self.metadata = None
-        self._model = None
 
     def _load(self):
         if self.embeddings is None:
@@ -37,18 +39,23 @@ class KnrsSearcher:
             self.embeddings = np.load(self.index_file)
             with self.meta_file.open('r', encoding='utf-8') as f:
                 self.metadata = json.load(f)
-            
-            model_name = self.metadata.get("model", "google/embeddinggemma-300m")
-            logger.info("Loading model %s for search...", model_name)
-            self._model = SentenceTransformer(model_name, trust_remote_code=True)
 
     def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
         """Perform a semantic search for the given query."""
         self._load()
         
-        query_embedding = self._model.encode(query)
-        # Compute cosine similarities
-        cos_scores = util.cos_sim(query_embedding, self.embeddings)[0]
+        # Get query embedding through the engine
+        query_embeddings = get_embeddings([query], self.config)
+        query_embedding = query_embeddings[0]
+        
+        # Compute cosine similarities using numpy
+        # cos_sim(a, b) = (a . b) / (||a|| * ||b||)
+        norm_q = np.linalg.norm(query_embedding)
+        norm_v = np.linalg.norm(self.embeddings, axis=1)
+        
+        # Avoid division by zero
+        dot_product = np.dot(self.embeddings, query_embedding)
+        cos_scores = dot_product / (norm_q * norm_v + 1e-9)
         
         # Get top-k indices
         top_results = np.argpartition(-cos_scores, range(min(top_k, len(cos_scores))))[:top_k]
