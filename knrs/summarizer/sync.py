@@ -16,14 +16,18 @@ from typing import Literal
 
 import yaml
 
-from knrs.config import KnrsConfig
-from knrs.naming import check_collisions, compute_file_hash, generate_summary_filename
+from knrs.naming import (
+    check_collisions,
+    compute_file_hash,
+    compute_markdown_content_hash,
+    generate_summary_filename,
+)
 from knrs.summarizer.engine import summarize_file
 
 logger = logging.getLogger(__name__)
 
 SummaryActionType = Literal[
-    "ADD", "REMOVE", "RESUMMARISE", "RENAME", "MOVE", "UPDATE_HASH", "SKIP"
+    "ADD", "REMOVE", "RESUMMARISE", "RENAME", "MOVE", "UPDATE_HASH", "UPDATE_METADATA", "SKIP"
 ]
 
 
@@ -37,6 +41,7 @@ class SummaryAction:
     target_path: Path | None = None
     old_path: Path | None = None
     new_path: Path | None = None
+    metadata: dict | None = None
 
 
 # ─── Scanning helpers ─────────────────────────────────────────────────────────
@@ -104,7 +109,7 @@ def scan_markdown_sources(
         first   = authors[0] if authors else ""
 
         try:
-            content_hash = compute_file_hash(md_path)
+            content_hash = compute_markdown_content_hash(md_path)
         except OSError:
             continue
 
@@ -181,6 +186,14 @@ def plan_summary_sync(
             ))
             continue
 
+        # Metadata changed (tags)? → UPDATE_METADATA
+        if mi["metadata"].get("tags") != si["metadata"].get("tags"):
+            actions.append(SummaryAction(
+                action="UPDATE_METADATA", uuid=uuid, title=mi["title"],
+                old_path=si["path"], metadata={"tags": mi["metadata"].get("tags")}
+            ))
+            continue
+
         # source_md_hash missing → backfill
         if not si["source_md_hash"]:
             actions.append(SummaryAction(
@@ -199,7 +212,6 @@ def plan_summary_sync(
 def _execute_summary_action(
     action: SummaryAction,
     cfg: KnrsConfig,
-    summarizer_root: Path,
     *,
     dry_run: bool,
     idx: int,
@@ -217,7 +229,7 @@ def _execute_summary_action(
             action.old_path.unlink(missing_ok=True)
         return summarize_file(
             action.source_path, action.target_path, action.content_hash,
-            summarizer_root, cfg.summarizer_name, dry_run=dry_run,
+            cfg.summarizer_name, dry_run=dry_run,
         )
 
     elif action.action == "REMOVE":
@@ -245,6 +257,14 @@ def _execute_summary_action(
             )
         return True
 
+    elif action.action == "UPDATE_METADATA":
+        logger.info("%s UPDATE_METADATA: %s", prefix,
+                    action.old_path.name if action.old_path else action.title)
+        if not dry_run and action.old_path and action.metadata:
+            from knrs.calibre.converter import update_frontmatter_inplace
+            update_frontmatter_inplace(action.old_path, action.metadata)
+        return True
+
     return True
 
 
@@ -252,7 +272,6 @@ def _execute_summary_action(
 
 def run_summary_sync(
     cfg: KnrsConfig,
-    summarizer_root: Path,
     *,
     dry_run: bool = False,
     concurrency: int = 1,
@@ -262,7 +281,6 @@ def run_summary_sync(
 
     Args:
         cfg:              Resolved KnrsConfig.
-        summarizer_root:  Directory containing platform summarizer sub-dirs.
         dry_run:          Log the plan but do not write anything.
         concurrency:      Number of parallel summariser workers.
     """
@@ -279,7 +297,7 @@ def run_summary_sync(
     counts: dict[str, int] = {}
     for a in actions:
         counts[a.action] = counts.get(a.action, 0) + 1
-    for verb in ("ADD", "RESUMMARISE", "RENAME", "MOVE", "UPDATE_HASH", "REMOVE", "SKIP"):
+    for verb in ("ADD", "RESUMMARISE", "RENAME", "MOVE", "UPDATE_HASH", "UPDATE_METADATA", "REMOVE", "SKIP"):
         if counts.get(verb, 0):
             logger.info("  %s: %d", verb, counts[verb])
 
@@ -305,14 +323,14 @@ def run_summary_sync(
 
     for a in sequential:
         done += 1
-        _execute_summary_action(a, cfg, summarizer_root, dry_run=False, idx=done, total=total)
+        _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
 
     if parallel:
         if concurrency > 1:
             with ProcessPoolExecutor(max_workers=concurrency) as exe:
                 futs = {
                     exe.submit(
-                        _execute_summary_action, a, cfg, summarizer_root,
+                        _execute_summary_action, a, cfg,
                         dry_run=False, idx=done + i + 1, total=total,
                     ): a
                     for i, a in enumerate(parallel)
@@ -325,6 +343,6 @@ def run_summary_sync(
         else:
             for a in parallel:
                 done += 1
-                _execute_summary_action(a, cfg, summarizer_root, dry_run=False, idx=done, total=total)
+                _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
 
     logger.info("Summary sync complete.")

@@ -180,7 +180,6 @@ def _check_planned_collisions(
 def _execute_action(
     action: SyncAction,
     cfg: KnrsConfig,
-    summarizer_submodule: Path,
     *,
     dry_run: bool,
     idx: int,
@@ -198,7 +197,7 @@ def _execute_action(
             action.old_path.unlink(missing_ok=True)
         if action.book:
             ok = convert_book(
-                action.book, action.target_path, summarizer_submodule, dry_run=dry_run
+                action.book, action.target_path, dry_run=dry_run
             )
             if ok and not dry_run and action.book.cover_path:
                 generate_cover_icon(
@@ -291,7 +290,6 @@ def _cleanup_icon_debris(icon_root: Path, active_uuids: set[str], dry_run: bool)
 
 def run_sync(
     cfg: KnrsConfig,
-    summarizer_submodule: Path,
     *,
     dry_run: bool = False,
     concurrency: int = 1,
@@ -301,7 +299,6 @@ def run_sync(
 
     Args:
         cfg:                   Resolved KnrsConfig.
-        summarizer_submodule:  Path to previous/Summarizer (for converter scripts).
         dry_run:               Print the plan but do not write any files.
         concurrency:           Number of parallel conversion workers.
     """
@@ -358,7 +355,7 @@ def run_sync(
     # Sequential (fast) actions first
     for a in sequential:
         done += 1
-        _execute_action(a, cfg, summarizer_submodule, dry_run=False, idx=done, total=total)
+        _execute_action(a, cfg, dry_run=False, idx=done, total=total)
 
     # Parallel conversions
     if parallel:
@@ -366,7 +363,7 @@ def run_sync(
             with ProcessPoolExecutor(max_workers=concurrency) as exe:
                 futs = {
                     exe.submit(
-                        _execute_action, a, cfg, summarizer_submodule,
+                        _execute_action, a, cfg,
                         dry_run=False, idx=done + i + 1, total=total
                     ): a
                     for i, a in enumerate(parallel)
@@ -379,7 +376,7 @@ def run_sync(
         else:
             for a in parallel:
                 done += 1
-                _execute_action(a, cfg, summarizer_submodule, dry_run=False, idx=done, total=total)
+                _execute_action(a, cfg, dry_run=False, idx=done, total=total)
 
     # Cleanup debris icons
     _cleanup_icon_debris(cfg.book_cover_icons, set(calibre_index.keys()), dry_run=dry_run)

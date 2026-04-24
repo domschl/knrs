@@ -48,11 +48,8 @@ def _pandoc_version() -> str:
 
 
 def _docling_version() -> str:
-    try:
-        from importlib.metadata import version
-        return version("docling")
-    except Exception:
-        return "unknown"
+    # docling is now in a subprocess venv, so we can't get its version directly here.
+    return "external"
 
 
 def get_converter_version(source_format: str) -> str:
@@ -153,12 +150,13 @@ def atomic_write(dest: Path, content: str | bytes) -> None:
 
 # ─── Conversion dispatch ──────────────────────────────────────────────────────
 
-def _converter_script(summarizer_submodule: Path) -> Path:
+def _converter_script() -> Path:
     """Resolve the platform-appropriate converter script path."""
+    base = Path(__file__).parent.parent / "subprocesses"
     if sys.platform == "darwin":
-        script = summarizer_submodule / "converter_macos" / "converter_macos.py"
+        script = base / "converter_macos" / "converter_macos.py"
     else:
-        script = summarizer_submodule / "converter_linux" / "converter_linux.py"
+        script = base / "converter_linux" / "converter_linux.py"
     return script
 
 
@@ -171,7 +169,6 @@ def _converter_python(script: Path) -> str:
 def convert_book(
     book: CalibreBook,
     target_path: Path,
-    summarizer_submodule: Path,
     *,
     dry_run: bool = False,
 ) -> bool:
@@ -206,7 +203,7 @@ def convert_book(
             return False
 
     # epub / pdf  → subprocess converter
-    script = _converter_script(summarizer_submodule)
+    script = _converter_script()
     if not script.exists():
         logger.error("Converter script not found: %s", script)
         return False

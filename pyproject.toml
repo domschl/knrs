@@ -10,8 +10,6 @@ dependencies = [
     "pillow>=10.0.0",
     "numpy>=2.0.0",
     "sentence-transformers>=3.0.0",
-    "pypdf>=4.0.0",
-    "docling>=1.0.0",
 ]
 
 [project.scripts]

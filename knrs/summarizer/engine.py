@@ -20,9 +20,10 @@ from knrs.calibre.converter import update_frontmatter_inplace
 logger = logging.getLogger(__name__)
 
 
-def _summarizer_script(summarizer_root: Path, summarizer_name: str) -> Path:
+def _summarizer_script(summarizer_name: str) -> Path:
     """Return the path to the summarizer script."""
-    return summarizer_root / summarizer_name / f"{summarizer_name}.py"
+    base = Path(__file__).parent.parent / "subprocesses"
+    return base / summarizer_name / f"{summarizer_name}.py"
 
 
 def _summarizer_python(script: Path) -> str:
@@ -35,7 +36,6 @@ def summarize_file(
     source_md: Path,
     target_path: Path,
     source_md_hash: str,
-    summarizer_root: Path,
     summarizer_name: str,
     *,
     dry_run: bool = False,
@@ -59,7 +59,7 @@ def summarize_file(
     Returns:
         True on success, False on failure.
     """
-    script = _summarizer_script(summarizer_root, summarizer_name)
+    script = _summarizer_script(summarizer_name)
     if not script.exists():
         logger.error("Summarizer script not found: %s", script)
         return False
