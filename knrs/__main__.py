@@ -81,7 +81,6 @@ def main() -> None:
         print(f"Error loading config: {e}", file=sys.stderr)
         sys.exit(1)
 
-    summarizer_root = Path(__file__).parent.parent / "previous" / "Summarizer"
 
     if args.command == "config":
         from knrs.config import print_config
@@ -89,11 +88,11 @@ def main() -> None:
     
     elif args.command == "sync-calibre":
         from knrs.calibre.sync import run_sync
-        run_sync(cfg, summarizer_root, dry_run=args.dry_run, concurrency=args.concurrency)
+        run_sync(cfg, dry_run=args.dry_run, concurrency=args.concurrency)
     
     elif args.command == "sync-summaries":
         from knrs.summarizer.sync import run_summary_sync
-        run_summary_sync(cfg, summarizer_root, dry_run=args.dry_run, concurrency=args.concurrency)
+        run_summary_sync(cfg, dry_run=args.dry_run, concurrency=args.concurrency)
     
     elif args.command == "sync-wiki":
         from knrs.wiki.sync import run_wiki_sync, inject_uuids_in_notes

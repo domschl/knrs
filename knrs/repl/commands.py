@@ -36,13 +36,13 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
 
 def cmd_sync_calibre(args: list[str], cfg: KnrsConfig):
     from knrs.calibre.sync import run_sync
-    summarizer_root = Path(__file__).parent.parent.parent / "previous" / "Summarizer"
-    run_sync(cfg, summarizer_root)
+    dry_run = "--dry-run" in args
+    run_sync(cfg, dry_run=dry_run)
 
 def cmd_sync_summaries(args: list[str], cfg: KnrsConfig):
     from knrs.summarizer.sync import run_summary_sync
-    summarizer_root = Path(__file__).parent.parent.parent / "previous" / "Summarizer"
-    run_summary_sync(cfg, summarizer_root)
+    dry_run = "--dry-run" in args
+    run_summary_sync(cfg, dry_run=dry_run)
 
 def cmd_sync_wiki(args: list[str], cfg: KnrsConfig):
     from knrs.wiki.sync import run_wiki_sync, inject_uuids_in_notes

@@ -1,0 +1,16 @@
+[project]
+name = "summarizer-macos"
+version = "0.1.0"
+description = "MLX based Gemini 4 summarizer for macOS"
+requires-python = ">=3.13"
+dependencies = [
+    "mlx-vlm>=0.4.3",
+    "pyyaml",
+    "summarizer_core",
+]
+
+[tool.uv.sources]
+summarizer_core = { path = "../summarizer_core", editable = true }
+
+[project.scripts]
+summarizer-macos = "summarizer_macos:main"

@@ -239,9 +239,9 @@ def check_collisions(entries: list[dict]) -> list[dict]:
     return collisions
 
 
-def compute_file_hash(filepath: str | object) -> str:
+def compute_file_hash(filepath: str | Path) -> str:
     """
-    Compute SHA-256 hash of a file's contents.
+    Compute SHA-256 hash of a file's entire contents.
 
     Args:
         filepath: Path to the file (str or Path).
@@ -254,3 +254,33 @@ def compute_file_hash(filepath: str | object) -> str:
         for chunk in iter(lambda: f.read(8192), b''):
             sha256.update(chunk)
     return sha256.hexdigest()
+
+
+def compute_markdown_content_hash(filepath: Path) -> str:
+    """
+    Compute SHA-256 hash of a Markdown file's body content, skipping the YAML frontmatter.
+
+    If no frontmatter is found, the entire file is hashed.
+
+    Args:
+        filepath: Path to the Markdown file.
+
+    Returns:
+        Hex-encoded SHA-256 hash string of the body content.
+    """
+    try:
+        text = filepath.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+    # Split frontmatter logic mirrored from knrs.calibre.converter
+    sep = "---\n"
+    if text.startswith(sep):
+        end = text.find("\n---\n", len(sep))
+        if end != -1:
+            # Skip the frontmatter and the closing separator
+            content = text[end + len("\n---\n"):]
+            return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    # No frontmatter or malformed, hash everything
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
