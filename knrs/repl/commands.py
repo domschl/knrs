@@ -57,7 +57,7 @@ def cmd_timeline(args: list[str], cfg: KnrsConfig):
 
 def cmd_index(args: list[str], cfg: KnrsConfig):
     from knrs.vector.indexer import KnrsIndexer
-    indexer = KnrsIndexer(cfg.vector_db)
+    indexer = KnrsIndexer(cfg)
     indexer.run_indexing(cfg.markdown_books)
 
 def cmd_search(args: list[str], cfg: KnrsConfig):
@@ -66,7 +66,7 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
         return
     query = " ".join(args)
     from knrs.vector.search import KnrsSearcher
-    searcher = KnrsSearcher(cfg.vector_db)
+    searcher = KnrsSearcher(cfg)
     try:
         results = searcher.search(query)
         table = Table(title=f"Search Results for: {query}")

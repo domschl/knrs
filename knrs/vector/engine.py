@@ -56,13 +56,11 @@ def get_embeddings(texts: list[str], config: KnrsConfig) -> np.ndarray:
         try:
             subprocess.run(
                 [python_exe, str(script), str(input_json), str(output_npy)],
-                check=True,
-                capture_output=True,
-                text=True
+                check=True
             )
         except subprocess.CalledProcessError as e:
-            logger.error("Embedder failed: %s", e.stderr)
-            raise RuntimeError(f"Embedder subprocess failed: {e.stderr}") from e
+            logger.error("Embedder failed with exit code %d", e.returncode)
+            raise RuntimeError(f"Embedder subprocess failed with exit code {e.returncode}") from e
 
         if not output_npy.exists():
             raise RuntimeError("Embedder did not produce output file.")
