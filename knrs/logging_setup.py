@@ -28,7 +28,7 @@ def setup_logging(verbose: bool = False) -> None:
             RichHandler(
                 rich_tracebacks=True,
                 show_path=False,
-                markup=True,
+                markup=False,
             )
         ],
     )

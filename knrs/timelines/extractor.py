@@ -72,6 +72,8 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
                 i += 1
             
             # Process data rows
+            last_start = None
+            prev_date_val = None
             while i < len(lines) and lines[i].strip().startswith('|'):
                 row = _parse_row(lines[i])
                 # A valid row must have the same column count as the header
@@ -81,6 +83,24 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
                     if date_val:
                         try:
                             start, end = parse_interval(date_val)
+                            
+                            # Sanity Check 2: Interval [a, b], b < a
+                            if end < start:
+                                logger.warning(
+                                    "Inverted interval '%s' in %s", 
+                                    date_val, path.name
+                                )
+
+                            # Sanity Check 1: Rows not in ascending order
+                            if last_start is not None and start < last_start:
+                                logger.warning(
+                                    "Timeline row out of order: '%s' follows '%s' in %s",
+                                    date_val, prev_date_val, path.name
+                                )
+                            
+                            last_start = start
+                            prev_date_val = date_val
+
                             # Map columns to their header names
                             event_data = {header[j]: row[j] for j in range(len(header))}
                             

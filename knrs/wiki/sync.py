@@ -177,13 +177,25 @@ def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> None:
             logger.error("Failed to parse metadata for %s", a.source_book)
             continue
             
-        # Relative path to icon for wiki embedding
-        icon_rel = Path("../../../KnrsData/BookCoverIcons") / f"{a.uuid}.jpg"
-        # Check if icon exists
-        if not (cfg.book_cover_icons / f"{a.uuid}.jpg").exists():
+        # Copy cover icon to AINotes/Books/Covers and calculate relative path
+        src_icon = cfg.book_cover_icons / f"{a.uuid}.jpg"
+        if src_icon.exists():
+            dst_icon = cfg.ai_notes_books / "Covers" / f"{a.uuid}.jpg"
+            dst_icon.parent.mkdir(parents=True, exist_ok=True)
+            if not dst_icon.exists() or dst_icon.stat().st_mtime < src_icon.stat().st_mtime:
+                import shutil
+                shutil.copy2(src_icon, dst_icon)
+            
+            import os
+            try:
+                icon_rel = Path(os.path.relpath(dst_icon, a.target_path.parent))
+            except ValueError:
+                icon_rel = dst_icon
+        else:
             icon_rel = None
             
-        content = assemble_wiki_page(metadata, si_body, icon_rel)
+        calibre_hex_name = "".join([hex(ord(c))[2:] for c in cfg.calibre_library_name])
+        content = assemble_wiki_page(metadata, si_body, icon_rel, calibre_hex_name)
         
         # If we moved/renamed, remove old
         if a.action == "UPDATE":
