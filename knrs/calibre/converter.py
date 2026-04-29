@@ -186,13 +186,13 @@ def convert_book(
     """
     if dry_run:
         logger.info(
-            "[dry-run] CONVERT [%s] %s -> %s",
+            "[dry-run] CONVERT [%s] '%s' -> '%s'",
             book.source_format, book.source_file.name, target_path,
         )
         return True
 
     if book.source_format == "markdown":
-        logger.info("Markdown source (copy+frontmatter): %s", book.source_file.name)
+        logger.info("Markdown source (copy+frontmatter): '%s'", book.source_file.name)
         try:
             md_body = book.source_file.read_text(encoding="utf-8")
             final   = build_markdown_with_frontmatter(book, md_body)
@@ -212,7 +212,7 @@ def convert_book(
     tmp_target  = target_path.with_suffix(".conversion.tmp")
 
     logger.info(
-        "Converting [%s] %s -> %s", book.source_format, book.source_file.name, target_path
+        "Converting [%s] '%s' -> '%s'", book.source_format, book.source_file.name, target_path
     )
     try:
         p = subprocess.Popen(
@@ -236,7 +236,7 @@ def convert_book(
         tmp_target.unlink()
         final = build_markdown_with_frontmatter(book, md_body)
         atomic_write(target_path, final)
-        logger.info("Converted: %s", target_path.name)
+        logger.info("Converted: '%s'", target_path.name)
         return True
 
     except Exception as exc:
