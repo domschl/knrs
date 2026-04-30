@@ -26,6 +26,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row("/sync-summaries", "Sync MarkdownBooks to BookSummaries")
     table.add_row("/sync-wiki", "Sync KnrsData to Wiki/AINotes")
     table.add_row("/sync-external-lib", "Sync Calibre EPUB/PDF to External Library")
+    table.add_row("/check-wiki", "Check and fix metadata consistency in Wiki")
     table.add_row("/timeline", "Extract timelines from Wiki/Notes")
     table.add_row("/index", "Update VectorDB index")
     table.add_row("/search <query>", "Search VectorDB")
@@ -56,6 +57,11 @@ def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig):
     from knrs.external_lib.sync import run_external_sync
     dry_run = "--dry-run" in args
     run_external_sync(cfg, dry_run=dry_run)
+
+def cmd_wiki_check(args: list[str], cfg: KnrsConfig):
+    from knrs.wiki.checker import run_wiki_check
+    dry_run = "--dry-run" in args
+    run_wiki_check(cfg, dry_run=dry_run)
 
 def cmd_timeline(args: list[str], cfg: KnrsConfig):
     from knrs.timelines.extractor import run_extraction
@@ -101,6 +107,7 @@ COMMANDS = {
     "/sync-summaries": cmd_sync_summaries,
     "/sync-wiki": cmd_sync_wiki,
     "/sync-external-lib": cmd_sync_external_lib,
+    "/check-wiki": cmd_wiki_check,
     "/timeline": cmd_timeline,
     "/index": cmd_index,
     "/search": cmd_search,

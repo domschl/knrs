@@ -94,6 +94,7 @@ def build_markdown_with_frontmatter(book: CalibreBook, md_body: str) -> str:
         "publisher":         book.publisher,
         "publication_date":  book.publication_date,
         "creation_date":     book.creation_date,
+        "context":           f"AINotes/Books/{book.series_dir}",
         "description":       book.description,
         "source_hash":       book.source_hash,
         "source_format":     book.source_format,
