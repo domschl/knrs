@@ -46,6 +46,7 @@ class KnrsConfig:
     summarizer_name: str = "summarizer_linux"
     embedder_name: str = "embedder_hf"
     calibre_library_name: str = "Calibre_Library"
+    external_library: Path = field(default_factory=lambda: Path("~/MetaLibrary").expanduser().resolve())
 
     # ------------------------------------------------------------------ #
     # Derived path helpers                                                 #
@@ -139,6 +140,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(calibre_library_name, str):
         raise ValueError("Config key 'calibre_library_name' must be a string.")
 
+    external_library_raw = raw.get("external_library", "~/MetaLibrary")
+    if not isinstance(external_library_raw, str):
+        raise ValueError("Config key 'external_library' must be a string.")
+
     cfg = KnrsConfig(
         calibre_path=resolve(raw["calibre_path"]),
         notes_path=resolve(raw["notes_path"]),
@@ -148,6 +153,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         summarizer_name=summarizer_name,
         embedder_name=embedder_name,
         calibre_library_name=calibre_library_name,
+        external_library=resolve(external_library_raw),
     )
 
     logger.debug("Config loaded from %s", path)
@@ -159,6 +165,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  summarizer_name: %s", cfg.summarizer_name)
     logger.debug("  embedder_name:   %s", cfg.embedder_name)
     logger.debug("  calibre_library_name: %s", cfg.calibre_library_name)
+    logger.debug("  external_library: %s", cfg.external_library)
 
     return cfg
 
@@ -182,6 +189,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("summarizer_name", cfg.summarizer_name),
         ("embedder_name", cfg.embedder_name),
         ("calibre_library_name", cfg.calibre_library_name),
+        ("external_library", str(cfg.external_library)),
     ]
     for key, val in rows:
         table.add_row(key, val)

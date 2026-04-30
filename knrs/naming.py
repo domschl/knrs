@@ -208,6 +208,71 @@ def generate_summary_filename(title: str, author: str, max_length: int = 80) -> 
     return "Summary of " + generate_filename(title, author, max_length)
 
 
+def author_title_filename(title: str, author: str, max_length: int = 80) -> str:
+    """
+    Generate a filesystem-safe filename from author and title (Author - Title format).
+
+    The result is at most max_length characters (before extension).
+    Trailing numbering in the title is preserved even if the title body
+    must be truncated.
+
+    Args:
+        title: The book title from Calibre metadata.
+        author: The first author name from Calibre metadata.
+        max_length: Maximum length of the returned string (default 80).
+
+    Returns:
+        A sanitized filename string without extension.
+    """
+    if not title:
+        title = "Untitled"
+    if not author:
+        author = "Unknown"
+
+    # Step 1: extract trailing numbering from the title before sanitization
+    title_body, number_suffix = _extract_trailing_number(title)
+
+    # Step 2: sanitize all parts
+    title_body = _sanitize_chars(title_body)
+    number_suffix = _sanitize_chars(number_suffix)
+    author = _sanitize_chars(author)
+
+    # Step 3: form the author prefix
+    author_prefix = f"{author} - "
+
+    # Step 4: compute space budget
+    protected_length = len(author_prefix) + len(number_suffix)
+    available_for_title = max_length - protected_length
+
+    if available_for_title < 10:
+        # If the author + number suffix is so long that there's almost no room
+        # for the title, truncate the author instead
+        author_prefix = f"{_truncate_at_word_boundary(author, 20)} - "
+        protected_length = len(author_prefix) + len(number_suffix)
+        available_for_title = max_length - protected_length
+
+    # Step 5: truncate title body if necessary
+    if len(title_body) > available_for_title:
+        title_body = _truncate_at_word_boundary(title_body, available_for_title)
+
+    # Step 6: reassemble
+    result = f"{author_prefix}{title_body}{number_suffix}"
+
+    # Final safety: ensure we don't exceed max_length
+    if len(result) > max_length:
+        result = result[:max_length].rstrip(' ,;:_-—')
+
+    return result
+
+
+def generate_external_lib_filename(title: str, author: str, max_length: int = 80) -> str:
+    """
+    Generate the base filename for external library (Author - Title).
+    Note: Extension is not appended here since it could be .epub or .pdf.
+    """
+    return author_title_filename(title, author, max_length)
+
+
 def check_collisions(entries: list[dict]) -> list[dict]:
     """
     Check for case-insensitive filename collisions.
