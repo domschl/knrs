@@ -61,7 +61,8 @@ def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig):
 def cmd_wiki_check(args: list[str], cfg: KnrsConfig):
     from knrs.wiki.checker import run_wiki_check
     dry_run = "--dry-run" in args
-    run_wiki_check(cfg, dry_run=dry_run)
+    fix_broken_links = "--broken-links-to-italics" in args
+    run_wiki_check(cfg, dry_run=dry_run, fix_broken_links=fix_broken_links)
 
 def cmd_timeline(args: list[str], cfg: KnrsConfig):
     from knrs.timelines.extractor import run_extraction
