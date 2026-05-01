@@ -13,8 +13,10 @@ On each run:
   2. Scan all source files; compute SHA-256.
   3. Diff → determine which files are new/changed and which are deleted.
   4. Prune chunks for deleted/changed files from existing arrays.
-  5. Embed only new/changed files, extend arrays.
-  6. Save merged state.
+  5. Persist pruned state immediately (crash-safe baseline).
+  6. Open a persistent EmbedderSession (model loads once).
+  7. For each file to embed: chunk → session.embed() → extend arrays.
+  8. Save a checkpoint every checkpoint_every files.
 
 Storage layout (VectorDB/):
   index.npy   — (N, D) float32 embedding matrix
@@ -29,9 +31,14 @@ import logging
 from pathlib import Path
 
 import numpy as np
+from rich.progress import (
+    Progress, SpinnerColumn, TextColumn, BarColumn,
+    MofNCompleteColumn, TaskProgressColumn,
+    TimeElapsedColumn, TimeRemainingColumn,
+)
 
 from knrs.calibre.converter import _split_frontmatter
-from knrs.vector.engine import get_embeddings
+from knrs.vector.engine import EmbedderSession
 from knrs.config import KnrsConfig
 
 logger = logging.getLogger(__name__)
@@ -103,7 +110,7 @@ class KnrsIndexer:
     def _load_state(self) -> tuple[np.ndarray, dict]:
         """Load existing index state; returns (embeddings, meta_dict)."""
         if self.index_file.exists() and self.meta_file.exists():
-            embeddings = np.load(self.index_file)
+            embeddings = np.load(str(self.index_file))
             with self.meta_file.open("r", encoding="utf-8") as fh:
                 meta = json.load(fh)
             # Back-compat: older indices had no file_hashes
@@ -118,7 +125,7 @@ class KnrsIndexer:
         }
 
     def _save_state(self, embeddings: np.ndarray, meta: dict) -> None:
-        np.save(self.index_file, embeddings)
+        np.save(str(self.index_file), embeddings)
         with self.meta_file.open("w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
 
@@ -166,19 +173,22 @@ class KnrsIndexer:
         """
         Differential index update with crash-safe checkpointing.
 
-        Files are embedded in batches of *checkpoint_every* and the index
-        is saved to disk after each batch.  If the process is interrupted
-        the next invocation will pick up exactly where it left off: the
-        hash-diff step skips every file whose SHA-256 is already stored in
-        ``file_hashes``.
+        The embedder subprocess is launched **once** per run (via
+        ``EmbedderSession``); the model is loaded into GPU memory on entry
+        and stays warm for all files.  Each file's chunks are embedded
+        immediately after reading, so memory usage stays bounded regardless
+        of dataset size.
+
+        A checkpoint (index.npy + index.json) is written every
+        *checkpoint_every* files.  On restart the hash-diff step
+        automatically skips all files whose SHA-256 is already recorded,
+        so the run resumes exactly where it left off.
 
         Args:
             markdown_books_dir: KnrsData/MarkdownBooks root.
             wiki_dir:           Wiki root (AINotes subtree is excluded).
             force:              Discard all existing state and re-index everything.
-            checkpoint_every:   Number of files to embed before writing a
-                                checkpoint.  Lower values survive crashes with
-                                less lost work but add more disk I/O.
+            checkpoint_every:   Number of files between disk checkpoints.
         """
         # ── 1. Load existing state ─────────────────────────────────────
         if force:
@@ -226,7 +236,7 @@ class KnrsIndexer:
         removed  = set(old_hashes) - set(current_hashes)
         changed  = {k for k, h in current_hashes.items() if old_hashes.get(k) != h}
         to_embed = sorted(changed)
-        to_prune = removed | (changed - set(to_embed))   # removed + stale
+        to_prune = removed | changed
 
         logger.info(
             "Diff: %d new/changed, %d removed, %d unchanged.",
@@ -234,15 +244,15 @@ class KnrsIndexer:
         )
 
         # ── 5. Prune stale / removed chunks ───────────────────────────
-        if to_prune or (changed and not force):
+        if to_prune:
             before = len(meta["chunks"])
-            embeddings, meta = self._prune(embeddings, meta, removed | changed)
+            embeddings, meta = self._prune(embeddings, meta, to_prune)
             logger.info(
                 "Pruned %d chunks (was %d, now %d).",
                 before - len(meta["chunks"]), before, len(meta["chunks"]),
             )
-            # Remove deleted-file hashes and persist immediately so that a
-            # crash after pruning doesn't re-add orphaned chunks on next run.
+            # Drop deleted-file hashes and persist immediately so a crash
+            # after pruning doesn't re-add orphaned chunks on next run.
             meta["file_hashes"] = {
                 k: v for k, v in meta["file_hashes"].items() if k not in removed
             }
@@ -250,84 +260,99 @@ class KnrsIndexer:
             self._save_state(embeddings, meta)
             logger.info("Checkpoint: pruned state saved.")
 
-        # ── 6. Embed new / changed files in checkpointed batches ───────
+        # ── 6. Per-file embedding with a persistent subprocess session ──
         if not to_embed:
             logger.info("Index is up to date — nothing to embed.")
             return
 
-        total_files   = len(to_embed)
-        total_batches = (total_files + checkpoint_every - 1) // checkpoint_every
+        total_files     = len(to_embed)
+        grand_total     = len(current_hashes)
+        already_indexed = grand_total - len(changed)
+
         logger.info(
-            "Will embed %d files in %d batch(es) of up to %d (checkpoint after each).",
-            total_files, total_batches, checkpoint_every,
+            "Overall progress: %d/%d files already indexed, %d to embed.",
+            already_indexed, grand_total, total_files,
         )
 
-        for batch_num, batch_start in enumerate(range(0, total_files, checkpoint_every), 1):
-            batch_keys = to_embed[batch_start : batch_start + checkpoint_every]
+        progress_columns = (
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        )
 
-            # -- Collect chunks for this batch --
-            batch_chunks:      list[str]  = []
-            batch_chunk_meta:  list[dict] = []
-            batch_hashes:      dict[str, str] = {}
+        # EmbedderSession launches the subprocess once; the model stays
+        # loaded in GPU memory for all files.  Each session.embed() call
+        # sends one file's chunks via a temp file + stdin, so memory usage
+        # is bounded by the largest single file, not the whole corpus.
+        with EmbedderSession(self.config) as session:
+            with Progress(*progress_columns, refresh_per_second=4) as progress:
+                task = progress.add_task(
+                    f"Indexing [{self.config.embedder_name}]",
+                    total=grand_total,
+                )
+                if already_indexed:
+                    progress.advance(task, already_indexed)
 
-            for key in batch_keys:
-                path = current_files[key]
-                try:
-                    content = path.read_text(encoding="utf-8")
-                    _, body = _split_frontmatter(content)
-                    if len(body) < 100:
-                        # Too short to index; record hash so we don't retry.
+                for file_num, key in enumerate(to_embed, 1):
+                    path = current_files[key]
+                    try:
+                        content = path.read_text(encoding="utf-8")
+                        _, body = _split_frontmatter(content)
+                        chunks = self.chunk_text(body) if len(body) >= 100 else []
+
+                        if chunks:
+                            fname = Path(key).name
+                            fname = (fname[:37] + "…") if len(fname) > 38 else fname.ljust(38)
+                            progress.update(
+                                task,
+                                description=f"[{file_num:{len(str(total_files))}}/{total_files}] {fname}",
+                            )
+                            new_emb = session.embed(chunks)
+
+                            if len(embeddings) == 0:
+                                embeddings = new_emb
+                            else:
+                                embeddings = np.concatenate(
+                                    [embeddings, new_emb], axis=0
+                                )
+                            for i, chunk in enumerate(chunks):
+                                meta["chunks"].append({
+                                    "source_key":  key,
+                                    "path":        key,
+                                    "chunk_index": i,
+                                    "text":        chunk[:200] + "...",
+                                })
+                                meta["full_texts"].append(chunk)
+
                         if key in current_hashes:
-                            batch_hashes[key] = current_hashes[key]
-                        continue
-                    chunks = self.chunk_text(body)
-                    for i, chunk in enumerate(chunks):
-                        batch_chunks.append(chunk)
-                        batch_chunk_meta.append({
-                            "source_key":  key,
-                            "path":        key,
-                            "chunk_index": i,
-                            "text":        chunk[:200] + "...",
-                        })
-                    if key in current_hashes:
-                        batch_hashes[key] = current_hashes[key]
-                except Exception as exc:
-                    logger.error("Failed to process %s: %s", key, exc)
+                            meta["file_hashes"][key] = current_hashes[key]
 
-            files_done = min(batch_start + checkpoint_every, total_files)
+                    except Exception as exc:
+                        logger.error("Failed to process %s: %s", key, exc)
 
-            # -- Embed --
-            if batch_chunks:
-                logger.info(
-                    "Batch %d/%d — embedding %d chunks from %d files (files %d–%d of %d)...",
-                    batch_num, total_batches,
-                    len(batch_chunks), len(batch_keys),
-                    batch_start + 1, files_done, total_files,
-                )
-                new_embeddings = get_embeddings(batch_chunks, self.config)
+                    progress.advance(task, 1)
 
-                if len(embeddings) == 0:
-                    embeddings = new_embeddings
-                else:
-                    embeddings = np.concatenate([embeddings, new_embeddings], axis=0)
-
-                meta["chunks"]     += batch_chunk_meta
-                meta["full_texts"] += batch_chunks
-            else:
-                logger.info(
-                    "Batch %d/%d — no embeddable content (files %d–%d of %d), skipping embed.",
-                    batch_num, total_batches, batch_start + 1, files_done, total_files,
-                )
-
-            # -- Checkpoint: update hashes and persist --
-            meta["file_hashes"].update(batch_hashes)
-            meta["model"] = self.config.embedder_name
-            self._save_state(embeddings, meta)
-            logger.info(
-                "Checkpoint %d/%d saved — %d total chunks, %d files indexed so far.",
-                batch_num, total_batches,
-                len(meta["chunks"]), len(meta["file_hashes"]),
-            )
+                    # ── Checkpoint every N files ──────────────────────────
+                    if file_num % checkpoint_every == 0 or file_num == total_files:
+                        meta["model"] = self.config.embedder_name
+                        self._save_state(embeddings, meta)
+                        files_done_overall = already_indexed + file_num
+                        pct = files_done_overall * 100 // grand_total
+                        progress.update(
+                            task,
+                            description=(
+                                f"Checkpoint saved — "
+                                f"{files_done_overall}/{grand_total} files ({pct}%)"
+                            ),
+                        )
+                        progress.console.log(
+                            f"Checkpoint: {files_done_overall}/{grand_total} files "
+                            f"({pct}%), {len(meta['chunks'])} total chunks."
+                        )
 
         logger.info(
             "Indexing complete: %d total chunks across %d files in %s",
