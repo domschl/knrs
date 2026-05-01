@@ -28,7 +28,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row("/sync-external-lib [--dry-run]", "Sync Calibre EPUB/PDF to External Library")
     table.add_row("/check-wiki [--dry-run] [--broken-links-to-italics]", "Check and fix metadata consistency in Wiki")
     table.add_row("/timeline", "Extract timelines from Wiki/Notes")
-    table.add_row("/index", "Update VectorDB index")
+    table.add_row("/index [--force]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything")
     table.add_row("/search <query>", "Search VectorDB")
     table.add_row("/migrate", "Migrate data from legacy Summarizer project (dry-run)")
     table.add_row("/config", "Show current configuration")
@@ -70,8 +70,8 @@ def cmd_timeline(args: list[str], cfg: KnrsConfig):
 
 def cmd_index(args: list[str], cfg: KnrsConfig):
     from knrs.vector.indexer import KnrsIndexer
-    indexer = KnrsIndexer(cfg)
-    indexer.run_indexing(cfg.markdown_books)
+    force = "--force" in args
+    KnrsIndexer(cfg).run_indexing(cfg.markdown_books, cfg.wiki_path, force=force)
 
 def cmd_search(args: list[str], cfg: KnrsConfig):
     if not args:
@@ -84,11 +84,17 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
         results = searcher.search(query)
         table = Table(title=f"Search Results for: {query}")
         table.add_column("Score", justify="right", style="green")
-        table.add_column("Book", style="bold")
+        table.add_column("Source", style="dim")
+        table.add_column("Path", style="bold")
         table.add_column("Snippet")
         
         for r in results:
-            table.add_row(f"{r.score:.4f}", r.path, r.text[:100].replace("\n", " ") + "...")
+            table.add_row(
+                f"{r.score:.4f}",
+                r.source_label,
+                r.bare_path,
+                r.text[:100].replace("\n", " ") + "...",
+            )
         console.print(table)
     except FileNotFoundError:
         console.print("[red]Error: Index not found. Run /index first.[/red]")

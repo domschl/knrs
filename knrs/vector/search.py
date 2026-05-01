@@ -18,9 +18,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SearchResult:
-    path: str
+    path: str        # prefixed key, e.g. "books:Series/Book.md"
     text: str
     score: float
+
+    @property
+    def source_label(self) -> str:
+        """Return 'books' or 'wiki' (or the raw label if unknown)."""
+        return self.path.split(":", 1)[0] if ":" in self.path else "unknown"
+
+    @property
+    def bare_path(self) -> str:
+        """Return the path without the source prefix."""
+        return self.path.split(":", 1)[1] if ":" in self.path else self.path
 
 class KnrsSearcher:
     def __init__(self, config: KnrsConfig):
