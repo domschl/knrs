@@ -41,7 +41,7 @@ MODEL_NAME = "gemma-4-31b-it"
 
 def get_platform_config():
     # Local specialized config loader since it modifies the config too
-    config_file = os.path.expanduser("~/.config/summarizer/summarizer_config_gc_gemma4_31b.json")
+    config_file = os.path.expanduser("~/.config/knrs/summarizer_config_gc_gemma4_31b.json")
     try:
         if os.path.exists(config_file):
             with open(config_file, 'r') as f:
@@ -51,7 +51,7 @@ def get_platform_config():
     return { "chunk_size": 200000, "api_key": "", "rate_blocked_until": "" }
 
 def update_block_until(timestamp_str: str):
-    config_path = os.path.expanduser("~/.config/summarizer/summarizer_config_gc_gemma4_31b.json")
+    config_path = os.path.expanduser("~/.config/knrs/summarizer_config_gc_gemma4_31b.json")
     try:
         config = get_platform_config()
         current_blocked = config.get("rate_blocked_until", "")
