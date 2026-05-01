@@ -62,6 +62,58 @@ def inject_uuids_in_notes(notes_path: Path) -> int:
             
     return updated_count
 
+def update_wikilinks(wiki_path: Path, rename_map: dict[str, str], dry_run: bool = False) -> None:
+    """Scan all .md files in wiki_path and update links according to rename_map."""
+    import re
+    import unicodedata
+    
+    if not rename_map:
+        return
+
+    # Normalize keys for safe matching
+    normalized_map = {
+        unicodedata.normalize("NFC", k).strip().lower(): v
+        for k, v in rename_map.items()
+    }
+    
+    updated_files = 0
+    updated_links = 0
+    
+    for md_path in wiki_path.rglob("*.md"):
+        if ".stfolder" in md_path.parts or ".git" in md_path.parts:
+            continue
+            
+        try:
+            content = md_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+            
+        def link_replacer(match):
+            nonlocal updated_links
+            target = match.group(1)
+            rest = match.group(2)
+            
+            norm_target = unicodedata.normalize("NFC", target).strip().lower()
+            if norm_target in normalized_map:
+                new_target = normalized_map[norm_target]
+                updated_links += 1
+                return f"[[{new_target}{rest}]]"
+            return match.group(0)
+            
+        # Match [[Target]] or [[Target|Alias]] or [[Target#Anchor]]
+        new_content = re.sub(r"\[\[([^|\]#]+)([^\]]*)\]\]", link_replacer, content)
+        
+        if new_content != content:
+            if not dry_run:
+                atomic_write(md_path, new_content)
+                logger.debug("Updated wikilinks in %s", md_path)
+            updated_files += 1
+            
+    if dry_run:
+        logger.info("[dry-run] Would update %d wikilinks across %d files.", updated_links, updated_files)
+    elif updated_files > 0:
+        logger.info("Updated %d wikilinks across %d files.", updated_links, updated_files)
+
 def plan_wiki_sync(
     cfg: KnrsConfig,
     markdown_index: dict[str, dict],
@@ -159,6 +211,8 @@ def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> None:
     if dry_run:
         return
         
+    rename_map: dict[str, str] = {}
+        
     for a in actions:
         if a.action == "SKIP": continue
         
@@ -201,7 +255,11 @@ def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> None:
         if a.action == "UPDATE":
             existing_path = existing_wiki.get(a.uuid)
             if existing_path and existing_path != a.target_path:
+                rename_map[existing_path.stem] = a.target_path.stem
                 existing_path.unlink()
                 
         atomic_write(a.target_path, content)
         logger.info("%s %s", a.action, a.target_path.name)
+        
+    if rename_map and not dry_run:
+        update_wikilinks(cfg.wiki_path, rename_map, dry_run=False)
