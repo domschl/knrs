@@ -17,7 +17,7 @@ deliverables and explicitly states what it reuses from predecessor code.
 | 2 | Wiki/Notes UUID convention | `knrs` **writes a UUID** into Notes frontmatter when one is absent. This is the only case where a source-of-truth file (Notes) may be modified by `knrs`. Pattern: same as `previous/EbookTools/ebook_tools.py` `notes` command. |
 | 3 | systemd service | **Out of scope** for all current phases. |
 | 4 | MCP / VectorDB access interface | **Out of scope** for all current phases. |
-| 5 | Migration scope | Source paths are read from `~/.config/summarizer/summarizer_config.json`: field `"markdown_path"` (MarkdownBooks) and `"summaries_path"` (BookSummaries). |
+| 5 | Migration scope | Source paths are read from `~/.config/knrs/summarizer_config.json`: field `"markdown_path"` (MarkdownBooks) and `"summaries_path"` (BookSummaries). |
 
 ---
 
@@ -294,7 +294,7 @@ structure.
 
 #### Source path discovery
 
-Source paths are read from **`~/.config/summarizer/summarizer_config.json`**:
+Source paths are read from **`~/.config/knrs/summarizer_config.json`**:
 
 | Config field | Contains |
 |---|---|
@@ -310,7 +310,7 @@ knrs/migration/
 
 **Steps**
 
-1. Load `~/.config/summarizer/summarizer_config.json`; resolve `markdown_path` and `summaries_path`.
+1. Load `~/.config/knrs/summarizer_config.json`; resolve `markdown_path` and `summaries_path`.
 2. Read all existing `MarkdownBook` files; extract UUID from frontmatter.
 3. Look up UUID in Calibre; compute new filename and **series directory** (preserving Calibre casing).
 4. Rename / move file (`git mv` to preserve history).
