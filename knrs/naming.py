@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ def capitalize_series(name: str) -> str:
     if not name or name == ".":
         return name
 
+    name = unicodedata.normalize("NFC", name)
     words = name.split()
     capitalized_words = []
     for word in words:
@@ -69,6 +71,7 @@ UNSAFE_CHARS_RE = re.compile(r'[*?"<>|]')
 
 def _sanitize_chars(text: str) -> str:
     """Replace or remove filesystem-unsafe characters in a visually pleasing way."""
+    text = unicodedata.normalize("NFC", text)
     # Replace colon with em-dash (looks good in titles)
     text = text.replace(':', ' —')
     # Replace slashes with hyphens
