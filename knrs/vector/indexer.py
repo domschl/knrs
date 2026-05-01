@@ -92,7 +92,7 @@ class KnrsIndexer:
     # Chunking                                                             #
     # ------------------------------------------------------------------ #
 
-    def chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
+    def chunk_text(self, text: str, chunk_size: int = 3000, overlap: int = 600) -> list[str]:
         """Simple character-based sliding-window chunking."""
         if len(text) <= chunk_size:
             return [text]
@@ -113,12 +113,17 @@ class KnrsIndexer:
             embeddings = np.load(str(self.index_file))
             with self.meta_file.open("r", encoding="utf-8") as fh:
                 meta = json.load(fh)
-            # Back-compat: older indices had no file_hashes
+            # Back-compat: older indices had no file_hashes or chunk_size info
             if "file_hashes" not in meta:
                 meta["file_hashes"] = {}
+            if "chunk_size" not in meta:
+                meta["chunk_size"] = 3000
+                meta["overlap"] = 600
             return embeddings, meta
         return np.array([], dtype=np.float32), {
             "model": self.config.embedder_name,
+            "chunk_size": 3000,
+            "overlap": 600,
             "file_hashes": {},
             "chunks": [],
             "full_texts": [],
@@ -196,12 +201,29 @@ class KnrsIndexer:
             embeddings = np.array([], dtype=np.float32)
             meta: dict = {
                 "model": self.config.embedder_name,
+                "chunk_size": 3000,
+                "overlap": 600,
                 "file_hashes": {},
                 "chunks": [],
                 "full_texts": [],
             }
         else:
             embeddings, meta = self._load_state()
+            # If the chunking parameters have changed, we must re-index everything
+            if meta.get("chunk_size") != 3000 or meta.get("overlap") != 600:
+                logger.warning(
+                    "Chunking parameters changed (was %s/%s, now 3000/600). Discarding index state.",
+                    meta.get("chunk_size", "unknown"), meta.get("overlap", "unknown")
+                )
+                embeddings = np.array([], dtype=np.float32)
+                meta = {
+                    "model": self.config.embedder_name,
+                    "chunk_size": 3000,
+                    "overlap": 600,
+                    "file_hashes": {},
+                    "chunks": [],
+                    "full_texts": [],
+                }
 
         old_hashes: dict[str, str] = meta.get("file_hashes", {})
 
@@ -311,7 +333,7 @@ class KnrsIndexer:
                                 task,
                                 description=f"[{file_num:{len(str(total_files))}}/{total_files}] {fname}",
                             )
-                            new_emb = session.embed(chunks)
+                            new_emb = session.embed(chunks, encode_mode="document")
 
                             if len(embeddings) == 0:
                                 embeddings = new_emb

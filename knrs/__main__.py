@@ -125,7 +125,7 @@ def main() -> None:
         query = " ".join(args.query)
         results = KnrsSearcher(cfg).search(query)
         for r in results:
-            print(f"[{r.score:.4f}] [{r.source_label}] {r.bare_path}\n{r.text[:200]}...\n")
+            print(f"[{r.score:.4f}] [{r.source_label}] {r.bare_path}\n{r.text[:800]}...\n")
 
     elif args.command == "migrate":
         from knrs.migration.migrate import run_migration

@@ -53,7 +53,7 @@ def _embedder_python(script: Path) -> str:
 
 # ─── One-shot helper (backward compat) ────────────────────────────────────────
 
-def get_embeddings(texts: list[str], config: KnrsConfig) -> np.ndarray:
+def get_embeddings(texts: list[str], config: KnrsConfig, encode_mode: str = "query") -> np.ndarray:
     """
     Compute embeddings for a list of strings using a one-shot subprocess.
 
@@ -78,10 +78,10 @@ def get_embeddings(texts: list[str], config: KnrsConfig) -> np.ndarray:
         with input_json.open("w", encoding="utf-8") as f:
             json.dump(texts, f)
 
-        logger.info("Running embedder %s for %d texts...", embedder_name, len(texts))
+        logger.info("Running embedder %s (mode=%s) for %d texts...", embedder_name, encode_mode, len(texts))
         try:
             subprocess.run(
-                [python_exe, str(script), str(input_json), str(output_npy)],
+                [python_exe, str(script), "--mode", encode_mode, str(input_json), str(output_npy)],
                 check=True,
             )
         except subprocess.CalledProcessError as e:
@@ -172,7 +172,7 @@ class EmbedderSession:
 
     # ── Embedding ──────────────────────────────────────────────────────────
 
-    def embed(self, texts: list[str]) -> np.ndarray:
+    def embed(self, texts: list[str], encode_mode: str = "document") -> np.ndarray:
         """
         Embed *texts* and return a ``(N, D)`` float32 array.
 
@@ -189,7 +189,7 @@ class EmbedderSession:
 
         # Send the batch paths to the subprocess.
         self._proc.stdin.write(          # type: ignore[union-attr]
-            f"{self._input_json} {self._output_npy}\n"
+            f"{encode_mode} {self._input_json} {self._output_npy}\n"
         )
         self._proc.stdin.flush()         # type: ignore[union-attr]
 
