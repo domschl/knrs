@@ -65,19 +65,24 @@ def _load_model() -> SentenceTransformer:
     return model
 
 
-def _embed(model: SentenceTransformer, input_path: Path, output_path: Path) -> None:
+def _embed(model: SentenceTransformer, input_path: Path, output_path: Path, mode: str = "document") -> None:
     with input_path.open("r", encoding="utf-8") as f:
         texts = json.load(f)
     if not texts:
         np.save(str(output_path), np.array([], dtype=np.float32))
         return
-    embeddings = model.encode(
-        texts,
-        batch_size=ENCODE_BATCH_SIZE,
-        show_progress_bar=False,   # parent's rich bar covers overall progress
-        convert_to_numpy=True,
-    )
-    np.save(str(output_path), embeddings)
+    
+    encode_kwargs = {
+        "batch_size": ENCODE_BATCH_SIZE,
+        "show_progress_bar": False,   # parent's rich bar covers overall progress
+        "convert_to_numpy": True,
+    }
+    
+    if mode == "query":
+        embeddings = model.encode_query(texts, **encode_kwargs)
+    else:
+        embeddings = model.encode_document(texts, **encode_kwargs)
+            np.save(str(output_path), embeddings)
     # Release PyTorch's reserved-but-unallocated CUDA memory after each call.
     # Without this, the allocator retains freed KV-cache tensors in its pool
     # across server-mode calls, causing progressive OOM on large corpora.
@@ -100,34 +105,35 @@ def server_mode() -> None:
         if not line:
             continue
         parts = line.split()
-        if len(parts) != 2:
-            print(f"ERROR: expected 'INPUT OUTPUT', got {line!r}", flush=True)
+        if len(parts) != 3:
+            print(f"ERROR: expected 'MODE INPUT OUTPUT', got {line!r}", flush=True)
             continue
-        input_path, output_path = Path(parts[0]), Path(parts[1])
+        mode, input_path, output_path = parts[0], Path(parts[1]), Path(parts[2])
         try:
-            _embed(model, input_path, output_path)
+            _embed(model, input_path, output_path, mode)
             print("DONE", flush=True)
         except Exception as exc:
             print(f"ERROR: {exc}", flush=True)
 
 
-def one_shot_mode(input_path: Path, output_path: Path) -> None:
+def one_shot_mode(mode: str, input_path: Path, output_path: Path) -> None:
     """Legacy one-shot mode for standalone / backward-compat use."""
     model = _load_model()
-    logger.info("Computing embeddings (one-shot)…")
-    _embed(model, input_path, output_path)
+    logger.info("Computing embeddings (mode=%s)...", mode)
+    _embed(model, input_path, output_path, mode)
     logger.info("Saved embeddings to %s", output_path)
 
 
 def main() -> None:
     if len(sys.argv) == 2 and sys.argv[1] == "--server":
         server_mode()
-    elif len(sys.argv) == 3:
-        one_shot_mode(Path(sys.argv[1]), Path(sys.argv[2]))
+    elif len(sys.argv) == 5 and sys.argv[1] == "--mode":
+        mode = sys.argv[2]
+        one_shot_mode(mode, Path(sys.argv[3]), Path(sys.argv[4]))
     else:
         print("Usage:")
-        print("  embedder_hf.py --server               # persistent server mode")
-        print("  embedder_hf.py input.json output.npy  # one-shot mode")
+        print("  embedder_hf.py --server                           # persistent server mode")
+        print("  embedder_hf.py --mode query|document in.json out.npy # one-shot mode")
         sys.exit(1)
 
 

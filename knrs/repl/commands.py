@@ -104,7 +104,7 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
                 f"{r.score:.4f}",
                 r.source_label,
                 r.bare_path,
-                r.text[:100].replace("\n", " ") + "...",
+                r.text[:800].replace("\n", " ") + "...",
             )
         console.print(table)
     except FileNotFoundError:

@@ -55,7 +55,7 @@ class KnrsSearcher:
         self._load()
         
         # Get query embedding through the engine
-        query_embeddings = get_embeddings([query], self.config)
+        query_embeddings = get_embeddings([query], self.config, encode_mode="query")
         query_embedding = query_embeddings[0]
         
         # Compute cosine similarities using numpy
