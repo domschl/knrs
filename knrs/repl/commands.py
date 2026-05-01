@@ -28,7 +28,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row("/sync-external-lib [--dry-run]", "Sync Calibre EPUB/PDF to External Library")
     table.add_row("/check-wiki [--dry-run] [--broken-links-to-italics]", "Check and fix metadata consistency in Wiki")
     table.add_row("/timeline", "Extract timelines from Wiki/Notes")
-    table.add_row("/index [--force]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything")
+    table.add_row("/index [--force] [--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything; default checkpoint: 50 files")
     table.add_row("/search <query>", "Search VectorDB")
     table.add_row("/migrate", "Migrate data from legacy Summarizer project (dry-run)")
     table.add_row("/config", "Show current configuration")
@@ -71,7 +71,18 @@ def cmd_timeline(args: list[str], cfg: KnrsConfig):
 def cmd_index(args: list[str], cfg: KnrsConfig):
     from knrs.vector.indexer import KnrsIndexer
     force = "--force" in args
-    KnrsIndexer(cfg).run_indexing(cfg.markdown_books, cfg.wiki_path, force=force)
+    checkpoint_every = 50
+    if "--checkpoint-every" in args:
+        idx = args.index("--checkpoint-every")
+        try:
+            checkpoint_every = int(args[idx + 1])
+        except (IndexError, ValueError):
+            console.print("[red]--checkpoint-every requires an integer argument[/red]")
+            return
+    KnrsIndexer(cfg).run_indexing(
+        cfg.markdown_books, cfg.wiki_path,
+        force=force, checkpoint_every=checkpoint_every,
+    )
 
 def cmd_search(args: list[str], cfg: KnrsConfig):
     if not args:

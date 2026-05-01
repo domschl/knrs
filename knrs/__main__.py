@@ -56,6 +56,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true",
         help="Discard existing index and re-embed everything from scratch."
     )
+    index_p.add_argument(
+        "--checkpoint-every", type=int, default=50, metavar="N",
+        help="Save a checkpoint after every N files (default: 50)."
+    )
 
     # search
     search_p = subparsers.add_parser("search", help="Search VectorDB.")
@@ -113,6 +117,7 @@ def main() -> None:
             cfg.markdown_books,
             cfg.wiki_path,
             force=args.force,
+            checkpoint_every=args.checkpoint_every,
         )
         
     elif args.command == "search":
