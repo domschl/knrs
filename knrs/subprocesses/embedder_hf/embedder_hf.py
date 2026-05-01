@@ -25,6 +25,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from huggingface_hub import snapshot_download
 
 # Must be set before PyTorch is imported so the CUDA allocator picks it up.
 # expandable_segments reduces fragmentation when many small tensors are
@@ -46,8 +47,20 @@ ENCODE_BATCH_SIZE = 32
 
 
 def _load_model() -> SentenceTransformer:
-    logger.info("Loading SentenceTransformer model %s...", MODEL_NAME)
-    model = SentenceTransformer(MODEL_NAME, trust_remote_code=True)
+    # Attempt to find the model in the local HuggingFace cache to avoid 
+    # the delay caused by checking for updates online (ETag requests).
+    load_path = MODEL_NAME
+    try:
+        cached_path = snapshot_download(MODEL_NAME, local_files_only=True)
+        if cached_path:
+            logger.info("Found cached model at %s", cached_path)
+            load_path = cached_path
+    except Exception:
+        # Fallback to the original MODEL_NAME if not cached or on error.
+        pass
+
+    logger.info("Loading SentenceTransformer model %s...", load_path)
+    model = SentenceTransformer(load_path, trust_remote_code=True)
     logger.info("Model loaded.")
     return model
 
