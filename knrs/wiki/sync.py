@@ -36,6 +36,8 @@ def inject_uuids_in_notes(notes_path: Path) -> int:
     """
     updated_count = 0
     for md_path in notes_path.rglob("*.md"):
+        if 'Notes/Templates' in md_path.parts:
+            continue
         try:
             content = md_path.read_text(encoding="utf-8")
         except Exception as e:

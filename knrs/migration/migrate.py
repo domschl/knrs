@@ -1,7 +1,7 @@
 """
 knrs.migration.migrate — One-time migration from Summarizer to KnrsData.
 
-Reads ~/.config/summarizer/summarizer_config.json and plans moves of
+Reads ~/.config/knrs/summarizer_config.json and plans moves of
 MarkdownBooks and BookSummaries to the new KnrsData structure.
 """
 
@@ -27,7 +27,7 @@ def run_migration(cfg: KnrsConfig, dry_run: bool = True):
         cfg:     New KnrsConfig.
         dry_run: If True, only log planned moves.
     """
-    old_config_path = resolve("~/.config/summarizer/summarizer_config.json")
+    old_config_path = resolve("~/.config/knrs/summarizer_config.json")
     if not old_config_path.exists():
         logger.error("Legacy summarizer config not found at %s. Migration aborted.", old_config_path)
         return
