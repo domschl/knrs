@@ -1,5 +1,23 @@
 """
 knrs.vector.engine — Embedding subprocess dispatch.
+
+Two interfaces
+--------------
+``get_embeddings(texts, config)``
+    One-shot call: spawns a fresh subprocess, embeds, exits.
+    Kept for backward compatibility / small ad-hoc use (e.g. search queries).
+
+``EmbedderSession(config)``
+    Context-manager that keeps a single subprocess alive for the full
+    session.  The model is loaded **once** on entry; subsequent ``embed()``
+    calls send batches via stdin and receive results without restarting the
+    process.  Use this for long indexing runs.
+
+    Example::
+
+        with EmbedderSession(cfg) as session:
+            for texts in batches:
+                emb = session.embed(texts)
 """
 
 from __future__ import annotations
@@ -10,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import TracebackType
 
 import numpy as np
 
@@ -17,6 +36,8 @@ from knrs.config import KnrsConfig
 
 logger = logging.getLogger(__name__)
 
+
+# ─── Path helpers ──────────────────────────────────────────────────────────────
 
 def _embedder_script(embedder_name: str) -> Path:
     """Return the path to the embedder script."""
@@ -30,9 +51,14 @@ def _embedder_python(script: Path) -> str:
     return str(venv) if venv.exists() else sys.executable
 
 
+# ─── One-shot helper (backward compat) ────────────────────────────────────────
+
 def get_embeddings(texts: list[str], config: KnrsConfig) -> np.ndarray:
     """
-    Compute embeddings for a list of strings using the configured embedder subprocess.
+    Compute embeddings for a list of strings using a one-shot subprocess.
+
+    Suitable for small batches (e.g. search queries).  For bulk indexing use
+    ``EmbedderSession`` so the model is loaded only once.
     """
     if not texts:
         return np.array([], dtype=np.float32)
@@ -56,14 +82,122 @@ def get_embeddings(texts: list[str], config: KnrsConfig) -> np.ndarray:
         try:
             subprocess.run(
                 [python_exe, str(script), str(input_json), str(output_npy)],
-                check=True
+                check=True,
             )
         except subprocess.CalledProcessError as e:
             logger.error("Embedder failed with exit code %d", e.returncode)
-            raise RuntimeError(f"Embedder subprocess failed with exit code {e.returncode}") from e
+            raise RuntimeError(
+                f"Embedder subprocess failed with exit code {e.returncode}"
+            ) from e
 
         if not output_npy.exists():
             raise RuntimeError("Embedder did not produce output file.")
 
-        embeddings = np.load(output_npy)
-        return embeddings
+        return np.load(str(output_npy))
+
+
+# ─── Persistent session ────────────────────────────────────────────────────────
+
+class EmbedderSession:
+    """
+    Persistent embedding subprocess — the model is loaded exactly once.
+
+    Usage::
+
+        with EmbedderSession(cfg) as session:
+            embeddings = session.embed(["text one", "text two"])
+
+    The subprocess is shut down cleanly when the context exits.
+    """
+
+    def __init__(self, config: KnrsConfig) -> None:
+        self.config = config
+        self._proc: subprocess.Popen | None = None
+        self._tmp:  tempfile.TemporaryDirectory | None = None
+        self._input_json: Path | None = None
+        self._output_npy: Path | None = None
+
+    # ── Context manager ────────────────────────────────────────────────────
+
+    def __enter__(self) -> "EmbedderSession":
+        embedder_name = self.config.embedder_name
+        script = _embedder_script(embedder_name)
+        if not script.exists():
+            raise FileNotFoundError(f"Embedder script not found: {script}")
+        python_exe = _embedder_python(script)
+
+        logger.info(
+            "Launching persistent embedder '%s' (model will load once)…",
+            embedder_name,
+        )
+        self._proc = subprocess.Popen(
+            [python_exe, str(script), "--server"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1,          # line-buffered text mode
+        )
+
+        # Block until the subprocess has finished loading the model.
+        ready_line = self._proc.stdout.readline().strip()  # type: ignore[union-attr]
+        if ready_line != "READY":
+            self._proc.kill()
+            raise RuntimeError(
+                f"Embedder subprocess did not send READY; got: {ready_line!r}"
+            )
+        logger.info("Embedder model loaded and ready.")
+
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(self._tmp.name)
+        self._input_json = tmp / "input.json"
+        self._output_npy = tmp / "output.npy"
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.stdin.close()   # type: ignore[union-attr]
+                self._proc.wait(timeout=30)
+            except Exception:
+                self._proc.kill()
+            self._proc = None
+        if self._tmp is not None:
+            self._tmp.cleanup()
+            self._tmp = None
+
+    # ── Embedding ──────────────────────────────────────────────────────────
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        """
+        Embed *texts* and return a ``(N, D)`` float32 array.
+
+        The subprocess stays alive; this just writes a batch file, sends the
+        paths over stdin, and reads the ``DONE`` acknowledgement.
+        """
+        if not texts:
+            return np.array([], dtype=np.float32)
+        if self._proc is None or self._input_json is None:
+            raise RuntimeError("EmbedderSession is not active — use as a context manager.")
+
+        with self._input_json.open("w", encoding="utf-8") as f:
+            json.dump(texts, f)
+
+        # Send the batch paths to the subprocess.
+        self._proc.stdin.write(          # type: ignore[union-attr]
+            f"{self._input_json} {self._output_npy}\n"
+        )
+        self._proc.stdin.flush()         # type: ignore[union-attr]
+
+        # Block until the subprocess signals completion.
+        response = self._proc.stdout.readline().strip()  # type: ignore[union-attr]
+        if response.startswith("ERROR"):
+            raise RuntimeError(f"Embedder subprocess error: {response}")
+        if response != "DONE":
+            raise RuntimeError(f"Unexpected embedder response: {response!r}")
+
+        return np.load(str(self._output_npy))
