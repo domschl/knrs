@@ -82,7 +82,7 @@ def _embed(model: SentenceTransformer, input_path: Path, output_path: Path, mode
         embeddings = model.encode_query(texts, **encode_kwargs)
     else:
         embeddings = model.encode_document(texts, **encode_kwargs)
-            np.save(str(output_path), embeddings)
+    np.save(str(output_path), embeddings)
     # Release PyTorch's reserved-but-unallocated CUDA memory after each call.
     # Without this, the allocator retains freed KV-cache tensors in its pool
     # across server-mode calls, causing progressive OOM on large corpora.
