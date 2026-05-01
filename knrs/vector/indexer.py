@@ -161,14 +161,24 @@ class KnrsIndexer:
         wiki_dir: Path,
         *,
         force: bool = False,
+        checkpoint_every: int = 50,
     ) -> None:
         """
-        Differential index update.
+        Differential index update with crash-safe checkpointing.
+
+        Files are embedded in batches of *checkpoint_every* and the index
+        is saved to disk after each batch.  If the process is interrupted
+        the next invocation will pick up exactly where it left off: the
+        hash-diff step skips every file whose SHA-256 is already stored in
+        ``file_hashes``.
 
         Args:
             markdown_books_dir: KnrsData/MarkdownBooks root.
             wiki_dir:           Wiki root (AINotes subtree is excluded).
-            force:              If True, discard all existing state and re-index everything.
+            force:              Discard all existing state and re-index everything.
+            checkpoint_every:   Number of files to embed before writing a
+                                checkpoint.  Lower values survive crashes with
+                                less lost work but add more disk I/O.
         """
         # ── 1. Load existing state ─────────────────────────────────────
         if force:
@@ -231,63 +241,95 @@ class KnrsIndexer:
                 "Pruned %d chunks (was %d, now %d).",
                 before - len(meta["chunks"]), before, len(meta["chunks"]),
             )
+            # Remove deleted-file hashes and persist immediately so that a
+            # crash after pruning doesn't re-add orphaned chunks on next run.
+            meta["file_hashes"] = {
+                k: v for k, v in meta["file_hashes"].items() if k not in removed
+            }
+            meta["model"] = self.config.embedder_name
+            self._save_state(embeddings, meta)
+            logger.info("Checkpoint: pruned state saved.")
 
-        # ── 6. Embed new / changed files ───────────────────────────────
+        # ── 6. Embed new / changed files in checkpointed batches ───────
         if not to_embed:
             logger.info("Index is up to date — nothing to embed.")
-        else:
-            new_chunks:    list[str]  = []
-            new_chunk_meta: list[dict] = []
+            return
 
-            for key in to_embed:
+        total_files   = len(to_embed)
+        total_batches = (total_files + checkpoint_every - 1) // checkpoint_every
+        logger.info(
+            "Will embed %d files in %d batch(es) of up to %d (checkpoint after each).",
+            total_files, total_batches, checkpoint_every,
+        )
+
+        for batch_num, batch_start in enumerate(range(0, total_files, checkpoint_every), 1):
+            batch_keys = to_embed[batch_start : batch_start + checkpoint_every]
+
+            # -- Collect chunks for this batch --
+            batch_chunks:      list[str]  = []
+            batch_chunk_meta:  list[dict] = []
+            batch_hashes:      dict[str, str] = {}
+
+            for key in batch_keys:
                 path = current_files[key]
                 try:
                     content = path.read_text(encoding="utf-8")
                     _, body = _split_frontmatter(content)
                     if len(body) < 100:
+                        # Too short to index; record hash so we don't retry.
+                        if key in current_hashes:
+                            batch_hashes[key] = current_hashes[key]
                         continue
                     chunks = self.chunk_text(body)
                     for i, chunk in enumerate(chunks):
-                        new_chunks.append(chunk)
-                        new_chunk_meta.append({
+                        batch_chunks.append(chunk)
+                        batch_chunk_meta.append({
                             "source_key":  key,
-                            "path":        key,          # kept as the display path
+                            "path":        key,
                             "chunk_index": i,
                             "text":        chunk[:200] + "...",
                         })
+                    if key in current_hashes:
+                        batch_hashes[key] = current_hashes[key]
                 except Exception as exc:
                     logger.error("Failed to process %s: %s", key, exc)
 
-            if new_chunks:
-                logger.info(
-                    "Embedding %d new chunks from %d files using %s...",
-                    len(new_chunks), len(to_embed), self.config.embedder_name,
-                )
-                new_embeddings = get_embeddings(new_chunks, self.config)
+            files_done = min(batch_start + checkpoint_every, total_files)
 
-                # Extend arrays
+            # -- Embed --
+            if batch_chunks:
+                logger.info(
+                    "Batch %d/%d — embedding %d chunks from %d files (files %d–%d of %d)...",
+                    batch_num, total_batches,
+                    len(batch_chunks), len(batch_keys),
+                    batch_start + 1, files_done, total_files,
+                )
+                new_embeddings = get_embeddings(batch_chunks, self.config)
+
                 if len(embeddings) == 0:
                     embeddings = new_embeddings
                 else:
                     embeddings = np.concatenate([embeddings, new_embeddings], axis=0)
 
-                meta["chunks"]     += new_chunk_meta
-                meta["full_texts"] += new_chunks
+                meta["chunks"]     += batch_chunk_meta
+                meta["full_texts"] += batch_chunks
+            else:
+                logger.info(
+                    "Batch %d/%d — no embeddable content (files %d–%d of %d), skipping embed.",
+                    batch_num, total_batches, batch_start + 1, files_done, total_files,
+                )
 
-        # ── 7. Update file_hashes and save ────────────────────────────
-        # Remove hashes for deleted files; update hashes for embedded files.
-        new_file_hashes = {
-            k: v for k, v in old_hashes.items() if k not in removed
-        }
-        for key in to_embed:
-            if key in current_hashes:
-                new_file_hashes[key] = current_hashes[key]
+            # -- Checkpoint: update hashes and persist --
+            meta["file_hashes"].update(batch_hashes)
+            meta["model"] = self.config.embedder_name
+            self._save_state(embeddings, meta)
+            logger.info(
+                "Checkpoint %d/%d saved — %d total chunks, %d files indexed so far.",
+                batch_num, total_batches,
+                len(meta["chunks"]), len(meta["file_hashes"]),
+            )
 
-        meta["file_hashes"] = new_file_hashes
-        meta["model"]       = self.config.embedder_name
-
-        self._save_state(embeddings, meta)
         logger.info(
-            "Index saved: %d total chunks across %d files in %s",
+            "Indexing complete: %d total chunks across %d files in %s",
             len(meta["chunks"]), len(meta["file_hashes"]), self.db_dir,
         )
