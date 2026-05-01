@@ -51,7 +51,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("timeline", help="Extract timelines from Wiki/Notes.")
 
     # index
-    subparsers.add_parser("index", help="Update VectorDB index.")
+    index_p = subparsers.add_parser("index", help="Update VectorDB index.")
+    index_p.add_argument(
+        "--force", action="store_true",
+        help="Discard existing index and re-embed everything from scratch."
+    )
 
     # search
     search_p = subparsers.add_parser("search", help="Search VectorDB.")
@@ -105,14 +109,18 @@ def main() -> None:
         
     elif args.command == "index":
         from knrs.vector.indexer import KnrsIndexer
-        KnrsIndexer(cfg).run_indexing(cfg.markdown_books)
+        KnrsIndexer(cfg).run_indexing(
+            cfg.markdown_books,
+            cfg.wiki_path,
+            force=args.force,
+        )
         
     elif args.command == "search":
         from knrs.vector.search import KnrsSearcher
         query = " ".join(args.query)
         results = KnrsSearcher(cfg).search(query)
         for r in results:
-            print(f"[{r.score:.4f}] {r.path}\n{r.text[:200]}...\n")
+            print(f"[{r.score:.4f}] [{r.source_label}] {r.bare_path}\n{r.text[:200]}...\n")
 
     elif args.command == "migrate":
         from knrs.migration.migrate import run_migration
