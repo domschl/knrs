@@ -37,24 +37,28 @@ def _build_parser() -> argparse.ArgumentParser:
     # sync-calibre
     sync_cal_p = subparsers.add_parser("sync-calibre", help="Sync Calibre to MarkdownBooks.")
     sync_cal_p.add_argument("--dry-run", action="store_true")
+    sync_cal_p.add_argument("--force", action="store_true", help="Override git safety checks.")
     sync_cal_p.add_argument("--concurrency", type=int, default=1)
 
     # sync-summaries
     sync_sum_p = subparsers.add_parser("sync-summaries", help="Sync MarkdownBooks to Summaries.")
     sync_sum_p.add_argument("--dry-run", action="store_true")
+    sync_sum_p.add_argument("--force", action="store_true", help="Override git safety checks.")
     sync_sum_p.add_argument("--concurrency", type=int, default=1)
 
     # sync-wiki
-    subparsers.add_parser("sync-wiki", help="Sync KnrsData to Wiki/AINotes.")
+    sync_wiki_p = subparsers.add_parser("sync-wiki", help="Sync KnrsData to Wiki/AINotes.")
+    sync_wiki_p.add_argument("--force", action="store_true", help="Override git safety checks.")
 
     # timeline
-    subparsers.add_parser("timeline", help="Extract timelines from Wiki/Notes.")
+    timeline_p = subparsers.add_parser("timeline", help="Extract timelines from Wiki/Notes.")
+    timeline_p.add_argument("--force", action="store_true", help="Override git safety checks.")
 
     # index
     index_p = subparsers.add_parser("index", help="Update VectorDB index.")
     index_p.add_argument(
         "--force", action="store_true",
-        help="Discard existing index and re-embed everything from scratch."
+        help="Discard existing index and re-embed everything from scratch (also overrides git safety)."
     )
     index_p.add_argument(
         "--checkpoint-every", type=int, default=50, metavar="N",
@@ -93,23 +97,46 @@ def main() -> None:
     
     elif args.command == "sync-calibre":
         from knrs.calibre.sync import run_sync
+        from knrs.paths import ensure_git_safety
+        if not args.dry_run and not ensure_git_safety(cfg.knrs_data, args.force):
+            print(f"Error: {cfg.knrs_data} is a git repo but not up-to-date. Use --force to override.", file=sys.stderr)
+            sys.exit(1)
         run_sync(cfg, dry_run=args.dry_run, concurrency=args.concurrency)
     
     elif args.command == "sync-summaries":
         from knrs.summarizer.sync import run_summary_sync
+        from knrs.paths import ensure_git_safety
+        if not args.dry_run and not ensure_git_safety(cfg.knrs_data, args.force):
+            print(f"Error: {cfg.knrs_data} is a git repo but not up-to-date. Use --force to override.", file=sys.stderr)
+            sys.exit(1)
         run_summary_sync(cfg, dry_run=args.dry_run, concurrency=args.concurrency)
     
     elif args.command == "sync-wiki":
         from knrs.wiki.sync import run_wiki_sync, inject_uuids_in_notes
+        from knrs.paths import ensure_git_safety
+        if not ensure_git_safety(cfg.wiki_path, args.force):
+            print(f"Error: {cfg.wiki_path} is a git repo but not up-to-date. Use --force to override.", file=sys.stderr)
+            sys.exit(1)
         inject_uuids_in_notes(cfg.notes_path)
         run_wiki_sync(cfg)
         
     elif args.command == "timeline":
         from knrs.timelines.extractor import run_extraction
+        from knrs.paths import ensure_git_safety
+        if not ensure_git_safety(cfg.knrs_data, args.force):
+            print(f"Error: {cfg.knrs_data} is a git repo but not up-to-date. Use --force to override.", file=sys.stderr)
+            sys.exit(1)
         run_extraction(cfg.notes_path, cfg.timelines / "timelines.json")
         
     elif args.command == "index":
         from knrs.vector.indexer import KnrsIndexer
+        from knrs.paths import ensure_git_safety
+        if not ensure_git_safety(cfg.knrs_data, args.force, check_remote=True):
+            print(f"Error: {cfg.knrs_data} is a git repo but not up-to-date (remote check enabled). Use --force to override.", file=sys.stderr)
+            sys.exit(1)
+        if not ensure_git_safety(cfg.wiki_path, args.force, check_remote=True):
+            print(f"Error: {cfg.wiki_path} is a git repo but not up-to-date (remote check enabled). Use --force to override.", file=sys.stderr)
+            sys.exit(1)
         KnrsIndexer(cfg).run_indexing(
             cfg.markdown_books,
             cfg.wiki_path,

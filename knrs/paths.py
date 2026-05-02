@@ -8,6 +8,8 @@ absolute resolution, and existence checks happen in exactly one place.
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import subprocess
 
 
 def resolve(path: str | Path) -> Path:
@@ -52,3 +54,31 @@ def knrs_config_file() -> Path:
 def knrs_history_file() -> Path:
     """Return the path to the REPL history file ~/.config/knrs/history."""
     return knrs_config_dir() / "history"
+
+
+def is_git_repo(path: str) -> bool:
+    path = os.path.expanduser(path)
+    return os.path.exists(os.path.join(path, ".git"))
+
+
+def is_git_uptodate(path: str, check_remote:bool = False) -> bool:
+    path = os.path.expanduser(path)
+    local_changes = subprocess.run(["git", "status", "--porcelain"], cwd=path, capture_output=True, text=True).stdout == ""
+    if check_remote:
+        _ = subprocess.run(["git", "fetch"], cwd=path, capture_output=True)
+        remote_changes = subprocess.run(["git", "status", "--porcelain", "--branch"], cwd=path, capture_output=True, text=True).stdout == ""
+        return local_changes and remote_changes
+    else:
+        return local_changes
+
+
+def ensure_git_safety(path: str | Path, force: bool = False, check_remote: bool = False) -> bool:
+    """
+    Check if the path is a git repo and if it's up-to-date.
+    Returns True if safe to proceed, False otherwise.
+    """
+    p_str = str(path)
+    if is_git_repo(p_str):
+        if not is_git_uptodate(p_str, check_remote=check_remote):
+            return force
+    return True
