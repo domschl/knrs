@@ -61,7 +61,7 @@ def is_git_repo(path: str) -> bool:
     return os.path.exists(os.path.join(path, ".git"))
 
 
-def is_git_uptodate(path: str, check_remote:bool = False) -> bool:
+def is_git_uptodate(path: str, check_remote:bool) -> bool:
     path = os.path.expanduser(path)
     local_changes = subprocess.run(["git", "status", "--porcelain"], cwd=path, capture_output=True, text=True).stdout == ""
     if check_remote:
@@ -72,7 +72,7 @@ def is_git_uptodate(path: str, check_remote:bool = False) -> bool:
         return local_changes
 
 
-def ensure_git_safety(path: str | Path, force: bool = False, check_remote: bool = False) -> bool:
+def ensure_git_safety(path: str | Path, force: bool = False, check_remote: bool = True) -> bool:
     """
     Check if the path is a git repo and if it's up-to-date.
     Returns True if safe to proceed, False otherwise.
