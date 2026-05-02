@@ -22,13 +22,13 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_column("Command", style="cyan")
     table.add_column("Description")
     
-    table.add_row("/sync-calibre [--dry-run]", "Sync Calibre library to MarkdownBooks")
-    table.add_row("/sync-summaries [--dry-run]", "Sync MarkdownBooks to BookSummaries")
-    table.add_row("/sync-wiki", "Sync KnrsData to Wiki/AINotes")
+    table.add_row("/sync-calibre [--dry-run] [--force]", "Sync Calibre library to MarkdownBooks")
+    table.add_row("/sync-summaries [--dry-run] [--force]", "Sync MarkdownBooks to BookSummaries")
+    table.add_row("/sync-wiki [--force]", "Sync KnrsData to Wiki/AINotes")
     table.add_row("/sync-external-lib [--dry-run]", "Sync Calibre EPUB/PDF to External Library")
-    table.add_row("/check-wiki [--dry-run] [--broken-links-to-italics]", "Check and fix metadata consistency in Wiki")
-    table.add_row("/timeline", "Extract timelines from Wiki/Notes")
-    table.add_row("/index [--force] [--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything; default checkpoint: 50 files")
+    table.add_row("/check-wiki [--dry-run] [--broken-links-to-italics] [--force]", "Check and fix metadata consistency in Wiki")
+    table.add_row("/timeline [--force]", "Extract timelines from Wiki/Notes")
+    table.add_row("/index [--force] [--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything AND overrides git safety; default checkpoint: 50 files")
     table.add_row("/search <query>", "Search VectorDB")
     table.add_row("/config", "Show current configuration")
     table.add_row("/exit", "Exit the REPL")
@@ -37,16 +37,34 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
 
 def cmd_sync_calibre(args: list[str], cfg: KnrsConfig):
     from knrs.calibre.sync import run_sync
+    from knrs.paths import ensure_git_safety
     dry_run = "--dry-run" in args
+    force = "--force" in args
+    if not dry_run and not ensure_git_safety(cfg.knrs_data, force):
+        console.print(f"[red]Safety check failed: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
     run_sync(cfg, dry_run=dry_run)
 
 def cmd_sync_summaries(args: list[str], cfg: KnrsConfig):
     from knrs.summarizer.sync import run_summary_sync
+    from knrs.paths import ensure_git_safety
     dry_run = "--dry-run" in args
+    force = "--force" in args
+    if not dry_run and not ensure_git_safety(cfg.knrs_data, force):
+        console.print(f"[red]Safety check failed: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
     run_summary_sync(cfg, dry_run=dry_run)
 
 def cmd_sync_wiki(args: list[str], cfg: KnrsConfig):
     from knrs.wiki.sync import run_wiki_sync, inject_uuids_in_notes
+    from knrs.paths import ensure_git_safety
+    force = "--force" in args
+    if not ensure_git_safety(cfg.wiki_path, force):
+        console.print(f"[red]Safety check failed: {cfg.wiki_path} is a git repo but not up-to-date.[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
     logger.info("Injecting UUIDs into Notes...")
     count = inject_uuids_in_notes(cfg.notes_path)
     logger.info("Updated %d files.", count)
@@ -59,17 +77,41 @@ def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig):
 
 def cmd_wiki_check(args: list[str], cfg: KnrsConfig):
     from knrs.wiki.checker import run_wiki_check
+    from knrs.paths import ensure_git_safety
     dry_run = "--dry-run" in args
+    force = "--force" in args
+    if not dry_run and not ensure_git_safety(cfg.wiki_path, force):
+        console.print(f"[red]Safety check failed: {cfg.wiki_path} is a git repo but not up-to-date.[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
     fix_broken_links = "--broken-links-to-italics" in args
     run_wiki_check(cfg, dry_run=dry_run, fix_broken_links=fix_broken_links)
 
 def cmd_timeline(args: list[str], cfg: KnrsConfig):
     from knrs.timelines.extractor import run_extraction
+    from knrs.paths import ensure_git_safety
+    force = "--force" in args
+    if not ensure_git_safety(cfg.knrs_data, force):
+        console.print(f"[red]Safety check failed: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
     run_extraction(cfg.notes_path, cfg.timelines / "timelines.json")
 
 def cmd_index(args: list[str], cfg: KnrsConfig):
     from knrs.vector.indexer import KnrsIndexer
+    from knrs.paths import ensure_git_safety
     force = "--force" in args
+    
+    # Index depends on both knrs_data and wiki_path being up-to-date (with remote check)
+    if not ensure_git_safety(cfg.knrs_data, force, check_remote=True):
+        console.print(f"[red]Safety check failed: {cfg.knrs_data} is a git repo but not up-to-date (remote check enabled).[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
+    if not ensure_git_safety(cfg.wiki_path, force, check_remote=True):
+        console.print(f"[red]Safety check failed: {cfg.wiki_path} is a git repo but not up-to-date (remote check enabled).[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
+
     checkpoint_every = 50
     if "--checkpoint-every" in args:
         idx = args.index("--checkpoint-every")
