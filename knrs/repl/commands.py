@@ -30,7 +30,6 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row("/timeline", "Extract timelines from Wiki/Notes")
     table.add_row("/index [--force] [--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything; default checkpoint: 50 files")
     table.add_row("/search <query>", "Search VectorDB")
-    table.add_row("/migrate", "Migrate data from legacy Summarizer project (dry-run)")
     table.add_row("/config", "Show current configuration")
     table.add_row("/exit", "Exit the REPL")
     
@@ -110,10 +109,6 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
     except FileNotFoundError:
         console.print("[red]Error: Index not found. Run /index first.[/red]")
 
-def cmd_migrate(args: list[str], cfg: KnrsConfig):
-    from knrs.migration.migrate import run_migration
-    execute = "--execute" in args
-    run_migration(cfg, dry_run=not execute)
 
 def cmd_config(args: list[str], cfg: KnrsConfig):
     from knrs.config import print_config
@@ -129,6 +124,5 @@ COMMANDS = {
     "/timeline": cmd_timeline,
     "/index": cmd_index,
     "/search": cmd_search,
-    "/migrate": cmd_migrate,
     "/config": cmd_config,
 }
