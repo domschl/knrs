@@ -61,13 +61,19 @@ def is_git_repo(path: str) -> bool:
     return os.path.exists(os.path.join(path, ".git"))
 
 
-def is_git_uptodate(path: str, check_remote:bool) -> bool:
+def is_git_uptodate(path: str | Path, check_remote: bool = True) -> bool:
     path = os.path.expanduser(path)
     local_changes = subprocess.run(["git", "status", "--porcelain"], cwd=path, capture_output=True, text=True).stdout == ""
     if check_remote:
         _ = subprocess.run(["git", "fetch"], cwd=path, capture_output=True)
-        remote_changes = subprocess.run(["git", "status", "--porcelain", "--branch"], cwd=path, capture_output=True, text=True).stdout == ""
-        return local_changes and remote_changes
+        git_output = subprocess.run(["git", "status", "--porcelain", "--branch"], cwd=path, capture_output=True, text=True).stdout
+        
+        # The first line contains branch status (e.g., '## main...origin/main [ahead 1]')
+        # Absence of '[' means the branch is in sync with its remote (or has no remote).
+        lines = git_output.splitlines()
+        branch_status = lines[0] if lines else ""
+        remote_in_sync = "[" not in branch_status
+        return local_changes and remote_in_sync
     else:
         return local_changes
 
