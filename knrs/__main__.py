@@ -65,9 +65,6 @@ def _build_parser() -> argparse.ArgumentParser:
     search_p = subparsers.add_parser("search", help="Search VectorDB.")
     search_p.add_argument("query", nargs="+")
 
-    # migrate
-    migrate_p = subparsers.add_parser("migrate", help="Migrate data from legacy Summarizer project.")
-    migrate_p.add_argument("--execute", action="store_true", help="Perform the migration (default is dry-run).")
 
     # repl
     subparsers.add_parser("repl", help="Start the interactive REPL (default).")
@@ -127,10 +124,6 @@ def main() -> None:
         for r in results:
             print(f"[{r.score:.4f}] [{r.source_label}] {r.bare_path}\n{r.text[:800]}...\n")
 
-    elif args.command == "migrate":
-        from knrs.migration.migrate import run_migration
-        run_migration(cfg, dry_run=not args.execute)
-            
     elif args.command in (None, "repl"):
         from knrs.repl.repl import run_repl
         run_repl(cfg)
