@@ -75,6 +75,34 @@ def _ensure_creation_date(filepath: Path, repo_dir: Path, meta: dict) -> bool:
 
     return changed
 
+def ensure_minimal_frontmatter(md_path: Path, wiki_path: Path, meta: dict) -> bool:
+    """Ensure uuid, context, and creation_date exist in meta. Returns True if changed."""
+    needs_update = False
+    
+    # 1. UUID
+    if not meta.get("uuid"):
+        meta["uuid"] = str(uuid.uuid4())
+        needs_update = True
+        
+    # 2. Context
+    try:
+        rel_path = md_path.parent.relative_to(wiki_path)
+        context_str = str(rel_path).replace("\\", "/") # Normalize slashes
+        if context_str == ".":
+            context_str = ""
+    except ValueError:
+        context_str = ""
+        
+    if meta.get("context") != context_str:
+        meta["context"] = context_str
+        needs_update = True
+        
+    # 3. Creation Date
+    if _ensure_creation_date(md_path, wiki_path, meta):
+        needs_update = True
+        
+    return needs_update
+
 def run_wiki_check(cfg: KnrsConfig, *, dry_run: bool = False, fix_broken_links: bool = False) -> None:
     """
     Check and enforce metadata consistency across the Wiki.
@@ -153,30 +181,8 @@ def run_wiki_check(cfg: KnrsConfig, *, dry_run: bool = False, fix_broken_links: 
         if not isinstance(meta, dict):
             meta = {}
             
-        needs_update = False
+        needs_update = ensure_minimal_frontmatter(md_path, cfg.wiki_path, meta)
         
-        # 1. UUID
-        if not meta.get("uuid"):
-            meta["uuid"] = str(uuid.uuid4())
-            needs_update = True
-            
-        # 2. Context
-        try:
-            rel_path = md_path.parent.relative_to(cfg.wiki_path)
-            context_str = str(rel_path).replace("\\", "/") # Normalize slashes
-            if context_str == ".":
-                context_str = ""
-        except ValueError:
-            context_str = ""
-            
-        if meta.get("context") != context_str:
-            meta["context"] = context_str
-            needs_update = True
-            
-        # 3. Creation Date
-        if _ensure_creation_date(md_path, cfg.wiki_path, meta):
-            needs_update = True
-            
         if needs_update:
             if dry_run:
                 logger.info("[dry-run] Would update metadata in %s", md_path)

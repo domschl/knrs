@@ -36,7 +36,20 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+from rich.logging import RichHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True,
+            show_path=False,
+            markup=False,
+        )
+    ],
+)
 logger = logging.getLogger("embedder_hf")
 
 MODEL_NAME = "google/embeddinggemma-300m"

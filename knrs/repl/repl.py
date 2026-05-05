@@ -52,6 +52,10 @@ def _setup_readline():
 def run_repl(cfg: KnrsConfig):
     """Start the interactive REPL."""
     _setup_readline()
+    
+    from knrs.repl.commands import init_git_state
+    init_git_state(cfg)
+    
     console.print("[bold blue]Welcome to knrs REPL![/bold blue]")
     console.print("Type [cyan]/help[/cyan] for available commands, or [cyan]/exit[/cyan] to quit.")
     

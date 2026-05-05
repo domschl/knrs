@@ -314,10 +314,8 @@ class KnrsIndexer:
             with Progress(*progress_columns, refresh_per_second=4) as progress:
                 task = progress.add_task(
                     f"Indexing [{self.config.embedder_name}]",
-                    total=grand_total,
+                    total=total_files,
                 )
-                if already_indexed:
-                    progress.advance(task, already_indexed)
 
                 for file_num, key in enumerate(to_embed, 1):
                     path = current_files[key]
@@ -362,17 +360,16 @@ class KnrsIndexer:
                     if file_num % checkpoint_every == 0 or file_num == total_files:
                         meta["model"] = self.config.embedder_name
                         self._save_state(embeddings, meta)
-                        files_done_overall = already_indexed + file_num
-                        pct = files_done_overall * 100 // grand_total
+                        pct = file_num * 100 // total_files if total_files else 100
                         progress.update(
                             task,
                             description=(
                                 f"Checkpoint saved — "
-                                f"{files_done_overall}/{grand_total} files ({pct}%)"
+                                f"{file_num}/{total_files} files ({pct}%)"
                             ),
                         )
                         progress.console.log(
-                            f"Checkpoint: {files_done_overall}/{grand_total} files "
+                            f"Checkpoint: {file_num}/{total_files} files "
                             f"({pct}%), {len(meta['chunks'])} total chunks."
                         )
 

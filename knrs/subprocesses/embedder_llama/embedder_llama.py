@@ -35,7 +35,20 @@ import numpy as np
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+from rich.logging import RichHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True,
+            show_path=False,
+            markup=False,
+        )
+    ],
+)
 logger = logging.getLogger("embedder_llama")
 
 REPO_ID  = "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF"
