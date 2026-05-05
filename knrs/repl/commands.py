@@ -62,7 +62,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row("/check-wiki [--dry-run] [--broken-links-to-italics] [--force]", "Check and fix metadata consistency in Wiki")
     table.add_row("/timeline [--force]", "Extract timelines from Wiki/Notes")
     table.add_row("/index [--force] [--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything AND overrides git safety; default checkpoint: 50 files")
-    table.add_row("/search <query>", "Search VectorDB")
+    table.add_row("/search <query> [--raw] [--highlight] [--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
     table.add_row("/config", "Show current configuration")
     table.add_row("/exit", "Exit the REPL")
     
@@ -153,15 +153,16 @@ def cmd_index(args: list[str], cfg: KnrsConfig):
 
 def cmd_search(args: list[str], cfg: KnrsConfig):
     if not args:
-        console.print("[red]Usage: /search <query> [--raw] [--highlight][/red]")
+        console.print("[red]Usage: /search <query> [--raw] [--highlight] [--summarize][/red]")
         return
         
     raw = "--raw" in args
     highlight = "--highlight" in args
-    query_args = [a for a in args if a not in ("--raw", "--highlight")]
+    summarize = "--summarize" in args
+    query_args = [a for a in args if a not in ("--raw", "--highlight", "--summarize")]
     
     if not query_args:
-        console.print("[red]Usage: /search <query> [--raw] [--highlight][/red]")
+        console.print("[red]Usage: /search <query> [--raw] [--highlight] [--summarize][/red]")
         return
         
     query = " ".join(query_args)
@@ -201,6 +202,40 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
                 console.print(Markdown(chunk_text))
                 console.print(Rule(style="dim"))
                 console.print()
+                
+        if summarize and results:
+            import tempfile
+            from knrs.summarizer.engine import answer_query
+            
+            console.print("[bold yellow]Generating summary from search results...[/bold yellow]")
+            combined_text = "\n\n---\n\n".join([f"Document: {Path(r.bare_path).name}\n\n{text}" for _, text, r in processed_results])
+            
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".md") as src_fd:
+                src_fd.write(combined_text)
+                src_path = Path(src_fd.name)
+                
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".md") as dst_fd:
+                dst_path = Path(dst_fd.name)
+                
+            try:
+                success = answer_query(query, src_path, dst_path, cfg.summarizer_name)
+                if success and dst_path.exists():
+                    with open(dst_path, "r", encoding="utf-8") as f:
+                        answer_text = f.read()
+                    
+                    console.print("\n[bold green]AI Summary of Results:[/bold green]")
+                    if raw:
+                        console.print(answer_text, markup=False)
+                    else:
+                        from rich.panel import Panel
+                        console.print(Panel(Markdown(answer_text), title="Query Answer", border_style="green"))
+                else:
+                    console.print("[red]Failed to generate summary.[/red]")
+            finally:
+                if src_path.exists():
+                    src_path.unlink()
+                if dst_path.exists():
+                    dst_path.unlink()
             
     except FileNotFoundError:
         console.print("[red]Error: Index not found. Run /index first.[/red]")

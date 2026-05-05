@@ -420,6 +420,7 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "llama-cpp-python" },
     { name = "pyyaml" },
+    { name = "rich" },
     { name = "summarizer-core" },
 ]
 
@@ -428,6 +429,7 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=1.8.0" },
     { name = "llama-cpp-python", specifier = ">=0.3.0" },
     { name = "pyyaml" },
+    { name = "rich" },
     { name = "summarizer-core", editable = "../summarizer_core" },
 ]
 
