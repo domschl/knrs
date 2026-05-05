@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "mlx-vlm>=0.4.3",
     "pyyaml",
+    "rich",
     "summarizer_core",
 ]
 

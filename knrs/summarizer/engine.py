@@ -111,3 +111,52 @@ def summarize_file(
     except Exception as exc:
         logger.error("Summariser subprocess failed for %s: %s", source_md.name, exc)
         return False
+
+def answer_query(
+    query: str,
+    source_md: Path,
+    target_path: Path,
+    summarizer_name: str,
+) -> bool:
+    """
+    Answer a query based on the contents of *source_md* and write the result to *target_path*.
+
+    Args:
+        query:           The question to answer.
+        source_md:       Markdown file containing context.
+        target_path:     Where to write the answer.
+        summarizer_name: One of summarizer_linux / summarizer_macos /
+                         summarizer_gc_gemma4_31b.
+
+    Returns:
+        True on success, False on failure.
+    """
+    script = _summarizer_script(summarizer_name)
+    if not script.exists():
+        logger.error("Summarizer script not found: %s", script)
+        return False
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    python_exe = _summarizer_python(script)
+
+    logger.info("Answering query: %s", query)
+    try:
+        p = subprocess.Popen(
+            [python_exe, str(script), str(source_md), str(target_path), "--query", query]
+        )
+        try:
+            p.wait()
+        except BaseException:
+            p.kill()
+            p.wait()
+            raise
+
+        if p.returncode != 0:
+            logger.error("Summariser exited %d for query", p.returncode)
+            return False
+
+        return True
+
+    except Exception as exc:
+        logger.error("Summariser subprocess failed for query: %s", exc)
+        return False

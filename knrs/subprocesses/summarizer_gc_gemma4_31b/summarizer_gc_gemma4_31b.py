@@ -212,6 +212,47 @@ def summarize_file(source_file: str, destination_file: str):
     os.replace(temp_file, destination_file)
     logger.info(f"Successfully wrote summary: {destination_file}")
 
+def answer_query(query: str, source_file: str, destination_file: str):
+    config = get_platform_config()
+    api_key = config.get("api_key")
+
+    if not api_key:
+        logger.error("No api_key found in platform config.")
+        sys.exit(1)
+
+    if not os.path.exists(source_file):
+        logger.error(f"Source file does not exist: {source_file}")
+        sys.exit(1)
+
+    try:
+        with open(source_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        engine = GemmaEngine(api_key)
+        
+        prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
+        
+        prompt = prompt_text
+        if hasattr(engine, 'format_prompt'):
+            formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
+            if formatted:
+                prompt = formatted
+                
+        output = engine.generate(prompt, max_tokens=1500)
+        
+        os.makedirs(os.path.dirname(destination_file), exist_ok=True)
+        temp_file = destination_file + ".tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            f.write(output)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, destination_file)
+        
+        logger.info(f"Successfully wrote answer: {destination_file}")
+    except Exception as e:
+        logger.exception(f"Error during Q&A: {e}")
+        sys.exit(1)
+
 def main():
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
@@ -219,9 +260,13 @@ def main():
     parser = argparse.ArgumentParser(description="Summarize using Gemma 4 31B")
     parser.add_argument("source", help="Source markdown file")
     parser.add_argument("destination", help="Destination summary file")
+    parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     args = parser.parse_args()
     
-    summarize_file(args.source, args.destination)
+    if args.query:
+        answer_query(args.query, args.source, args.destination)
+    else:
+        summarize_file(args.source, args.destination)
 
 if __name__ == "__main__":
     main()
