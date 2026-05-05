@@ -22,7 +22,20 @@ from summarizer_core.summarizer import chunked_summarize
 from summarizer_core.utils import watchdog
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+from rich.logging import RichHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True,
+            show_path=False,
+            markup=False,
+        )
+    ],
+)
 logger = logging.getLogger("gc_gemma4_31b")
 
 # Noise filter for external libraries

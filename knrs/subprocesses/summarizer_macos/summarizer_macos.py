@@ -5,7 +5,20 @@ import signal
 import logging
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+from rich.logging import RichHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True,
+            show_path=False,
+            markup=False,
+        )
+    ],
+)
 logger = logging.getLogger("summarizer_macos")
 
 # Noise filter for external libraries

@@ -29,11 +29,12 @@ class WikiAction:
     source_book: Path | None = None
     source_summary: Path | None = None
 
-def inject_uuids_in_notes(notes_path: Path) -> int:
+def inject_frontmatter_in_notes(notes_path: Path, wiki_path: Path) -> int:
     """
-    Scan Wiki/Notes and inject a UUID into frontmatter if missing.
+    Scan Wiki/Notes and inject uuid, context, and creation_date into frontmatter if missing.
     Returns the number of files updated.
     """
+    from knrs.wiki.checker import ensure_minimal_frontmatter
     updated_count = 0
     for md_path in notes_path.rglob("*.md"):
         if "Templates" in md_path.parts:
@@ -50,16 +51,14 @@ def inject_uuids_in_notes(notes_path: Path) -> int:
         except Exception:
             meta = {}
             
-        if not meta: meta = {}
+        if not isinstance(meta, dict):
+            meta = {}
         
-        if not meta.get('uuid'):
-            new_uuid = str(uuid.uuid4())
-            meta['uuid'] = new_uuid
-            # Prepend or update frontmatter
-            new_fm = yaml.dump(meta, default_flow_style=False, indent=2)
+        if ensure_minimal_frontmatter(md_path, wiki_path, meta):
+            new_fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True, indent=2)
             new_content = f"---\n{new_fm}---\n{body}"
             atomic_write(md_path, new_content)
-            logger.info("Injected UUID %s into %s", new_uuid, md_path.name)
+            logger.info("Updated frontmatter in %s", md_path.name)
             updated_count += 1
             
     return updated_count

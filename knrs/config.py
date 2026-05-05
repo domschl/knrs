@@ -19,6 +19,7 @@ Optional keys: target_series (default []), summarizer_name (default "summarizer_
 from __future__ import annotations
 
 import json
+import os
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,7 @@ class KnrsConfig:
     notes_path: Path
     knrs_data: Path
     wiki_path: Path
+    vector_db_path: Path
     target_series: list[str] = field(default_factory=list)
     summarizer_name: str = "summarizer_linux"
     embedder_name: str = "embedder_hf"
@@ -74,7 +76,7 @@ class KnrsConfig:
 
     @property
     def vector_db(self) -> Path:
-        return self.knrs_data / "VectorDB"
+        return self.vector_db_path
 
     @property
     def ai_notes(self) -> Path:
@@ -149,6 +151,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         notes_path=resolve(raw["notes_path"]),
         knrs_data=resolve(raw["knrs_data"]),
         wiki_path=resolve(raw["wiki_path"]),
+        vector_db_path=resolve(raw["vector_db_path"]),
         target_series=target_series,
         summarizer_name=summarizer_name,
         embedder_name=embedder_name,
@@ -161,6 +164,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  notes_path:      %s", cfg.notes_path)
     logger.debug("  knrs_data:       %s", cfg.knrs_data)
     logger.debug("  wiki_path:       %s", cfg.wiki_path)
+    logger.debug("  vector_db_path:  %s", cfg.vector_db_path)
     logger.debug("  target_series:   %s", cfg.target_series or "(all)")
     logger.debug("  summarizer_name: %s", cfg.summarizer_name)
     logger.debug("  embedder_name:   %s", cfg.embedder_name)
@@ -185,6 +189,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("notes_path", str(cfg.notes_path)),
         ("knrs_data", str(cfg.knrs_data)),
         ("wiki_path", str(cfg.wiki_path)),
+        ("vector_db_path", str(cfg.vector_db_path)),
         ("target_series", ", ".join(cfg.target_series) or "(all)"),
         ("summarizer_name", cfg.summarizer_name),
         ("embedder_name", cfg.embedder_name),
