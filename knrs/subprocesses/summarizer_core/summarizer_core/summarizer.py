@@ -9,7 +9,7 @@ from .markdown import get_answer_from_output
 
 logger = logging.getLogger("summarizer_core.summarizer")
 
-def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_size: int, doc_hash: str) -> str:
+def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_size: int, doc_hash: str, chunk_sum_size:int = 500, final_sum_tokens:int = 1500) -> str:
     num_chunks = math.ceil(len(content) / chunk_size)
     filename = os.path.basename(filepath)
     
@@ -26,7 +26,7 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
             if formatted:
                 prompt = formatted
             
-        output = engine.generate(prompt, max_tokens=1500)
+        output = engine.generate(prompt, max_tokens=final_sum_tokens)
         return get_answer_from_output(output)
         
     cache = WorkCache()
@@ -39,17 +39,17 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
             logger.info(f"[{filename}] Resuming from chunk {start_index+1}/{num_chunks}...")
     else:
         logger.info(f"[{filename}] Starting summarization process, {num_chunks} chunks...")
-
+ 
     for i in range(start_index, num_chunks):
         start = i * chunk_size
         end = start + chunk_size
         chunk = content[start:end]
-
+ 
         if not chunk.strip():
             logger.info(f"Chunk {i+1} is empty or whitespace only, skipping.")
             cache.save_progress(doc_hash, chunk_size, chunk_summaries, i + 1, filepath)
             continue
-
+ 
         chunk_start = time.time()
         # logger.info(f"[{filename}] Summarizing chunk {i+1}/{num_chunks}...")
         
@@ -61,14 +61,14 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
             if formatted:
                 prompt = formatted
             
-        output = engine.generate(prompt, max_tokens=500)
+        output = engine.generate(prompt, max_tokens=chunk_sum_size)
         duration = time.time() - chunk_start
         logger.info(f"[{filename}] Finished chunk {i+1}/{num_chunks} in {duration:.1f}s")
         
         extracted_output = get_answer_from_output(output)
         chunk_summaries.append(extracted_output)
         cache.save_progress(doc_hash, chunk_size, chunk_summaries, i + 1, filepath)
-
+ 
     logger.info(f"[{filename}] Consolidating final summary...")
     
     if not chunk_summaries:
@@ -86,7 +86,7 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
         if formatted:
             final_prompt = formatted
         
-    output = engine.generate(final_prompt, max_tokens=1500)
+    output = engine.generate(final_prompt, max_tokens=final_sum_tokens)
     final_summary = get_answer_from_output(output)
     
     cache.clear_progress(doc_hash, chunk_size)

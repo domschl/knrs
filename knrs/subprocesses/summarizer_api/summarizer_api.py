@@ -79,7 +79,7 @@ class ApiEngine(BaseEngine):
             logger.error(f"API request failed: {e}")
             raise
 
-def summarize_file(source_file: str, destination_file: str, config: dict, server_config: dict):
+def summarize_file(source_file: str, destination_file: str, config: dict, server_config: dict, summary_max_tokens: int):
     if not os.path.exists(source_file):
         logger.error(f"Source file does not exist: {source_file}")
         sys.exit(1)
@@ -87,7 +87,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, server
     try:
         with open(source_file, 'r', encoding='utf-8') as f:
             content = f.read()
-            
+
         chunk_size = config.get("chunk_size", DEFAULT_LOCAL_CONFIG["chunk_size"])
         model_name = config.get("model_name", DEFAULT_LOCAL_CONFIG["model_name"])
         
@@ -98,7 +98,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, server
         cache.cleanup_old_entries()
         
         engine = ApiEngine(server_config, config)
-        summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash)
+        summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash, final_sum_tokens=summary_max_tokens)
         
         sum_metadata = {}
         if metadata:
@@ -128,7 +128,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, server
         logger.exception(f"Error during summarization: {e}")
         sys.exit(1)
 
-def answer_query(query: str, source_file: str, destination_file: str, config: dict, server_config: dict):
+def answer_query(query: str, source_file: str, destination_file: str, config: dict, server_config: dict, summary_max_tokens: int):
     if not os.path.exists(source_file):
         logger.error(f"Source file does not exist: {source_file}")
         sys.exit(1)
@@ -140,7 +140,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         engine = ApiEngine(server_config, config)
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
-        output = engine.generate(prompt_text, max_tokens=1500)
+        output = engine.generate(prompt_text, max_tokens=summary_max_tokens)
         
         target_dir = os.path.dirname(destination_file)
         if target_dir and not os.path.exists(target_dir):
@@ -167,16 +167,16 @@ def main():
     parser.add_argument("source", help="Path to the source markdown file")
     parser.add_argument("destination", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
-    
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
     args = parser.parse_args()
     
     server_config = get_llm_server_config()
     config = get_platform_config("summarizer_config_api.json", DEFAULT_LOCAL_CONFIG)
     
     if args.query:
-        answer_query(args.query, args.source, args.destination, config, server_config)
+        answer_query(args.query, args.source, args.destination, config, server_config, args.summary_max_tokens)
     else:
-        summarize_file(args.source, args.destination, config, server_config)
+        summarize_file(args.source, args.destination, config, server_config, args.summary_max_tokens)
 
 if __name__ == "__main__":
     main()

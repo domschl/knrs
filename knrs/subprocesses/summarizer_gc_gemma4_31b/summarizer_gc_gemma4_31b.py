@@ -190,7 +190,7 @@ class GemmaEngine(BaseEngine):
                 raise e
         raise Exception("Max retry attempts reached.")
 
-def summarize_file(source_file: str, destination_file: str, config: dict):
+def summarize_file(source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
     api_key = config.get("api_key")
     chunk_size = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
     model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
@@ -209,7 +209,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict):
     cache.cleanup_old_entries()
 
     engine = GemmaEngine(api_key, model_name)
-    summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, doc_hash)
+    summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, doc_hash, final_sum_tokens=summary_max_tokens)
     
     sum_metadata = {}
     if metadata:
@@ -229,7 +229,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict):
     os.replace(temp_file, destination_file)
     logger.info(f"Successfully wrote summary: {destination_file}")
 
-def answer_query(query: str, source_file: str, destination_file: str, config: dict):
+def answer_query(query: str, source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
     api_key = config.get("api_key")
     model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
@@ -255,7 +255,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
             if formatted:
                 prompt = formatted
                 
-        output = engine.generate(prompt, max_tokens=1500)
+        output = engine.generate(prompt, max_tokens=summary_max_tokens)
         
         os.makedirs(os.path.dirname(destination_file), exist_ok=True)
         temp_file = destination_file + ".tmp"
@@ -278,13 +278,14 @@ def main():
     parser.add_argument("source", help="Source markdown file")
     parser.add_argument("destination", help="Destination summary file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
     args = parser.parse_args()
     config = get_platform_config()
     
     if args.query:
-        answer_query(args.query, args.source, args.destination, config)
+        answer_query(args.query, args.source, args.destination, config, args.summary_max_tokens)
     else:
-        summarize_file(args.source, args.destination, config)
+        summarize_file(args.source, args.destination, config, args.summary_max_tokens)
 
 if __name__ == "__main__":
     main()
