@@ -48,6 +48,7 @@ from summarizer_core.utils import get_platform_config, watchdog
 # Constants
 VERSION = "0.1.0"
 MODEL_NAME = "gemma-4-26b-it-gguf"
+# https://ai.google.dev/gemma/docs/mtp/mtp
 
 class LlamaCppEngine(BaseEngine):
     def __init__(self, repo_id: str = "unsloth/gemma-4-26B-A4B-it-GGUF", filename: str = "gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"):
