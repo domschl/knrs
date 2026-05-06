@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 
 # Regex for points
-_AD_RE = re.compile(r'^(\d{1,4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?(?:\s+AD)?$', re.IGNORECASE)
+_AD_RE = re.compile(r'^(\d+)(?:-(\d{1,2}))?(?:-(\d{1,2}))?(?:\s+AD)?$', re.IGNORECASE)
 _BC_RE = re.compile(r'^(\d+)(?:-(\d{1,2}))?(?:-(\d{1,2}))?\s+BC$', re.IGNORECASE)
 _BP_RE = re.compile(r'^([\d.]+)\s+BP$', re.IGNORECASE)
 _KYA_RE = re.compile(r'^([\d.]+)\s+(?:kya|ka|kyr)(?:\s+BP)?$', re.IGNORECASE)

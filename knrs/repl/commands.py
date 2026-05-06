@@ -60,7 +60,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row("/sync-wiki [--force]", "Sync KnrsData to Wiki/AINotes")
     table.add_row("/sync-external-lib [--dry-run]", "Sync Calibre EPUB/PDF to External Library")
     table.add_row("/check-wiki [--dry-run] [--broken-links-to-italics] [--force]", "Check and fix metadata consistency in Wiki")
-    table.add_row("/timeline [--force]", "Extract timelines from Wiki/Notes")
+    table.add_row("/timeline [--force] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--context PAT] [--raw] [keywords]", "Extract and filter timelines; supports date ranges, context, and keyword search")
     table.add_row("/index [--force] [--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything AND overrides git safety; default checkpoint: 50 files")
     table.add_row("/search <query> [--raw] [--highlight] [--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
     table.add_row("/config", "Show current configuration")
@@ -118,12 +118,64 @@ def cmd_wiki_check(args: list[str], cfg: KnrsConfig):
 
 def cmd_timeline(args: list[str], cfg: KnrsConfig):
     from knrs.timelines.extractor import run_extraction
+    from knrs.utils.search import SearchTools
+    from knrs.timelines.indra_time import parse_point
+    from rich.table import Table
+    import json
+
     force = "--force" in args
+    raw = "--raw" in args
+    
+    # Filter args
+    start_year = None
+    end_year = None
+    context_filters = []
+    keywords = []
+    
+    i = 0
+    clean_args = [a for a in args if a not in ["--force", "--raw"]]
+    while i < len(clean_args):
+        arg = clean_args[i]
+        if arg == "--from" and i + 1 < len(clean_args):
+            try:
+                start_year = parse_point(clean_args[i+1])
+                i += 2
+            except ValueError:
+                console.print(f"[red]Invalid --from date: {clean_args[i+1]}[/red]")
+                return
+        elif arg == "--to" and i + 1 < len(clean_args):
+            try:
+                end_year = parse_point(clean_args[i+1])
+                i += 2
+            except ValueError:
+                console.print(f"[red]Invalid --to date: {clean_args[i+1]}[/red]")
+                return
+        elif arg == "--context" and i + 1 < len(clean_args):
+            context_filters.append(clean_args[i+1])
+            i += 2
+        else:
+            keywords.append(arg)
+            i += 1
+
     if not force and not GIT_STATE["knrs_data_safe_local"]:
         console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
         return
-    run_extraction(cfg.notes_path, cfg.timelines / "timelines.json")
+        
+    output_file = cfg.timelines / "timelines.json"
+    run_extraction(cfg.notes_path, output_file)
+    
+    # If any filter or raw is provided, show the timeline
+    if start_year is not None or end_year is not None or context_filters or keywords or raw:
+        from knrs.timelines.extractor import show_timeline
+        show_timeline(
+            output_file,
+            start_year=start_year,
+            end_year=end_year,
+            context_filters=context_filters,
+            keywords=keywords,
+            raw=raw
+        )
 
 def cmd_index(args: list[str], cfg: KnrsConfig):
     from knrs.vector.indexer import KnrsIndexer

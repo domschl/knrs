@@ -22,6 +22,7 @@ class TimelineEvent:
     start_year: float
     end_year: float
     source_file: str
+    context: str
     data: dict[str, str]
 
     def to_dict(self) -> dict:
@@ -30,6 +31,7 @@ class TimelineEvent:
             "start_year": self.start_year,
             "end_year": self.end_year,
             "source_file": self.source_file,
+            "context": self.context,
         }
         d.update(self.data)
         return d
@@ -53,6 +55,19 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
 
     events = []
     rel_path = str(path.relative_to(notes_root))
+    
+    # Extract context from frontmatter
+    context = ""
+    lines = content.splitlines()
+    if lines and lines[0].strip() == "---":
+        for j in range(1, min(len(lines), 20)):
+            if lines[j].strip() == "---":
+                break
+            if ":" in lines[j]:
+                k, v = lines[j].split(":", 1)
+                if k.strip() == "context":
+                    context = v.strip().strip("'\"")
+                    break
     
     # Simple table extractor: find rows starting with |
     # We look for a header row containing 'Date' and 'Event'
@@ -108,6 +123,7 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
                                 start_year=start,
                                 end_year=end,
                                 source_file=rel_path,
+                                context=context,
                                 data=event_data
                             ))
                         except ValueError as e:
@@ -142,3 +158,99 @@ def run_extraction(notes_path: Path, output_file: Path) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w', encoding='utf-8') as f:
         json.dump([e.to_dict() for e in all_events], f, indent=2)
+
+def show_timeline(
+    output_file: Path,
+    start_year: float | None = None,
+    end_year: float | None = None,
+    context_filters: list[str] | None = None,
+    keywords: list[str] | None = None,
+    raw: bool = False
+) -> None:
+    """Load, filter, and display timeline events."""
+    from knrs.utils.search import SearchTools
+    from rich.table import Table
+    from rich.console import Console
+    
+    console = Console()
+    
+    if not output_file.exists():
+        console.print("[red]Timeline file not found. Run extraction first.[/red]")
+        return
+        
+    with output_file.open("r", encoding="utf-8") as f:
+        events = json.load(f)
+        
+    filtered = []
+    for ev in events:
+        # Context filter
+        if context_filters:
+            if not SearchTools.match(ev.get("context", ""), context_filters):
+                continue
+                
+        # Keyword filter
+        if keywords:
+            data_text = " ".join(str(v) for v in ev.values())
+            if not SearchTools.match(data_text, keywords):
+                continue
+        
+        # Date filter logic
+        ev_start = ev["start_year"]
+        ev_end = ev["end_year"]
+        
+        # Base overlap check
+        if start_year is not None and ev_end < start_year:
+            continue
+        if end_year is not None and ev_start > end_year:
+            continue
+            
+        filtered.append(ev)
+        
+    if not filtered:
+        console.print("[yellow]No timeline events matched the filters.[/yellow]")
+        return
+        
+    # Categorize and filter
+    results = []
+    if start_year is not None and end_year is not None and start_year < end_year:
+        for ev in filtered:
+            if ev["start_year"] >= start_year and ev["end_year"] <= end_year:
+                results.append(ev)
+    else:
+        results = filtered
+
+    if not results:
+        console.print("[yellow]No timeline events matched the strictly-within filter.[/yellow]")
+        return
+        
+    _render_events(results, raw, console)
+
+def _render_events(events: list[dict], raw: bool, console) -> None:
+    from rich.table import Table
+    # Metadata keys to exclude from the description column
+    exclude = {"start_year", "end_year", "source_file", "context", "Date"}
+    
+    if raw:
+        headers = ["Date", "Description", "Context"]
+        console.print(f"| {' | '.join(headers)} |")
+        console.print(f"| {' | '.join(['---']*len(headers))} |")
+        for ev in events:
+            date_str = ev.get("Date", f"{ev['start_year']}")
+            ctx_str = ev.get("context", "")
+            # Collect all other fields as description
+            desc = " | ".join(str(v) for k, v in ev.items() if k not in exclude)
+            console.print(f"| {date_str} | {desc} | {ctx_str} |")
+    else:
+        table = Table(box=None)
+        table.add_column("Date", style="cyan", width=30)
+        table.add_column("Description", style="white")
+        table.add_column("Context", style="magenta")
+        
+        for ev in events:
+            date_str = ev.get("Date", f"{ev['start_year']}")
+            ctx_str = ev.get("context", "")
+            # Collect all other fields as description
+            desc = " | ".join(str(v) for k, v in ev.items() if k not in exclude)
+            table.add_row(date_str, desc, ctx_str)
+            
+        console.print(table)

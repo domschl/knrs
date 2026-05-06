@@ -71,7 +71,12 @@ def run_repl(cfg: KnrsConfig):
                 break
                 
             if line.startswith("/"):
-                parts = line.split()
+                import shlex
+                try:
+                    parts = shlex.split(line)
+                except ValueError as e:
+                    console.print(f"[red]Error parsing command: {e}[/red]")
+                    continue
                 cmd_name = parts[0].lower()
                 args = parts[1:]
                 
