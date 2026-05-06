@@ -49,8 +49,14 @@ class NoiseFilter(logging.Filter):
 for handler in logging.root.handlers:
     handler.addFilter(NoiseFilter())
 
+# Constants
 VERSION = "0.1.0"
-MODEL_NAME = "gemma-4-31b-it"
+DEFAULT_CONFIG = {
+    "chunk_size": 200000,
+    "model_name": "gemma-4-31b-it",
+    "api_key": "",
+    "rate_blocked_until": ""
+}
 
 def get_platform_config():
     # Local specialized config loader since it modifies the config too
@@ -61,7 +67,17 @@ def get_platform_config():
                 return json.load(f)
     except Exception as e:
         logger.error(f"Error loading platform config: {e}")
-    return { "chunk_size": 200000, "api_key": "", "rate_blocked_until": "" }
+
+    # If not found or error, create default
+    try:
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        with open(config_file, 'w') as f:
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+        logger.warning(f"Default config created at {config_file}")
+    except Exception as e:
+        logger.error(f"Failed to create default config at {config_file}: {e}")
+
+    return DEFAULT_CONFIG.copy()
 
 def update_block_until(timestamp_str: str):
     config_path = os.path.expanduser("~/.config/knrs/summarizer_config_gc_gemma4_31b.json")
@@ -112,8 +128,9 @@ def parse_retry_delay(exception):
     return None
 
 class GemmaEngine(BaseEngine):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model_name: str):
         self.client = genai.Client(api_key=api_key)
+        self.model_name = model_name
         self.last_request_time = 0
         self.min_delay = 4.1
         self.backoff = 10
@@ -131,7 +148,7 @@ class GemmaEngine(BaseEngine):
 
             try:
                 response = self.client.models.generate_content(
-                    model=MODEL_NAME,
+                    model=self.model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         max_output_tokens=max_tokens,
@@ -173,10 +190,10 @@ class GemmaEngine(BaseEngine):
                 raise e
         raise Exception("Max retry attempts reached.")
 
-def summarize_file(source_file: str, destination_file: str):
-    config = get_platform_config()
+def summarize_file(source_file: str, destination_file: str, config: dict):
     api_key = config.get("api_key")
-    chunk_size = config.get("chunk_size", 200000)
+    chunk_size = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
+    model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
     if not api_key:
         logger.error("No api_key found in platform config.")
@@ -191,14 +208,14 @@ def summarize_file(source_file: str, destination_file: str):
     cache = WorkCache()
     cache.cleanup_old_entries()
 
-    engine = GemmaEngine(api_key)
+    engine = GemmaEngine(api_key, model_name)
     summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, doc_hash)
     
     sum_metadata = {}
     if metadata:
         for key in ['title', 'authors', 'tags', 'uuid']:
             if key in metadata: sum_metadata[key] = metadata[key]
-    sum_metadata['summary_version'] = f"{MODEL_NAME} {VERSION}"
+    sum_metadata['summary_version'] = f"{model_name} {VERSION}"
     sum_metadata['source_md_hash'] = doc_hash
     
     full_summary = assemble_markdown(sum_metadata, summary_text)
@@ -212,9 +229,9 @@ def summarize_file(source_file: str, destination_file: str):
     os.replace(temp_file, destination_file)
     logger.info(f"Successfully wrote summary: {destination_file}")
 
-def answer_query(query: str, source_file: str, destination_file: str):
-    config = get_platform_config()
+def answer_query(query: str, source_file: str, destination_file: str, config: dict):
     api_key = config.get("api_key")
+    model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
     if not api_key:
         logger.error("No api_key found in platform config.")
@@ -228,7 +245,7 @@ def answer_query(query: str, source_file: str, destination_file: str):
         with open(source_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        engine = GemmaEngine(api_key)
+        engine = GemmaEngine(api_key, model_name)
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
         
@@ -262,11 +279,12 @@ def main():
     parser.add_argument("destination", help="Destination summary file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     args = parser.parse_args()
+    config = get_platform_config()
     
     if args.query:
-        answer_query(args.query, args.source, args.destination)
+        answer_query(args.query, args.source, args.destination, config)
     else:
-        summarize_file(args.source, args.destination)
+        summarize_file(args.source, args.destination, config)
 
 if __name__ == "__main__":
     main()

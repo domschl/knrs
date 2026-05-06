@@ -1,0 +1,17 @@
+[project]
+name = "embedder-api"
+version = "0.1.0"
+description = "REST API based embedder"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "numpy",
+    "rich",
+    "summarizer_core",
+]
+
+[tool.uv.sources]
+summarizer_core = { path = "../summarizer_core", editable = true }
+
+[project.scripts]
+embedder-api = "embedder_api:main"
