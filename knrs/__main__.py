@@ -51,8 +51,13 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_wiki_p.add_argument("--force", action="store_true", help="Override git safety checks.")
 
     # timeline
-    timeline_p = subparsers.add_parser("timeline", help="Extract timelines from Wiki/Notes.")
+    timeline_p = subparsers.add_parser("timeline", help="Extract and filter timelines from Wiki/Notes.")
     timeline_p.add_argument("--force", action="store_true", help="Override git safety checks.")
+    timeline_p.add_argument("--from", dest="from_date", help="Filter events starting from this date.")
+    timeline_p.add_argument("--to", dest="to_date", help="Filter events ending at this date.")
+    timeline_p.add_argument("--context", action="append", help="Filter by context (can be specified multiple times).")
+    timeline_p.add_argument("--raw", action="store_true", help="Output raw markdown table.")
+    timeline_p.add_argument("keywords", nargs="*", help="Keyword search patterns.")
 
     # index
     index_p = subparsers.add_parser("index", help="Update VectorDB index.")
@@ -132,13 +137,43 @@ def main() -> None:
         run_wiki_sync(cfg)
         
     elif args.command == "timeline":
-        from knrs.timelines.extractor import run_extraction
+        from knrs.timelines.extractor import run_extraction, show_timeline
+        from knrs.timelines.indra_time import parse_point
         from knrs.repl.commands import init_git_state, GIT_STATE
         init_git_state(cfg)
         if not args.force and not GIT_STATE["knrs_data_safe_local"]:
             print(f"Error: {cfg.knrs_data} is a git repo but not up-to-date. Use --force to override.", file=sys.stderr)
             sys.exit(1)
-        run_extraction(cfg.notes_path, cfg.timelines / "timelines.json")
+            
+        output_file = cfg.timelines / "timelines.json"
+        run_extraction(cfg.notes_path, output_file)
+        
+        start_year = None
+        if args.from_date:
+            try:
+                start_year = parse_point(args.from_date)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+        
+        end_year = None
+        if args.to_date:
+            try:
+                end_year = parse_point(args.to_date)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+                
+        # If any filter or raw is provided, show the timeline
+        if start_year is not None or end_year is not None or args.context or args.keywords or args.raw:
+            show_timeline(
+                output_file,
+                start_year=start_year,
+                end_year=end_year,
+                context_filters=args.context,
+                keywords=args.keywords,
+                raw=args.raw
+            )
         
     elif args.command == "index":
         from knrs.vector.indexer import KnrsIndexer
