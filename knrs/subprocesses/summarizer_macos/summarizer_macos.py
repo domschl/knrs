@@ -48,10 +48,15 @@ from summarizer_core.utils import get_platform_config, watchdog
 
 # Constants
 VERSION = "0.1.0"
-MODEL_NAME = "gemma-4-26b-it-mlx"
+DEFAULT_CONFIG = {
+    "chunk_size": 200000,
+    "model_id": "mlx-community/gemma-4-26b-a4b-it-4bit",
+    "model_name": "gemma-4-26b-it-mlx"
+}
 
 class MLXEngine(BaseEngine):
-    def __init__(self, model_id: str = "mlx-community/gemma-4-26b-a4b-it-4bit"):
+    def __init__(self, config: dict):
+        model_id = config.get("model_id", DEFAULT_CONFIG["model_id"])
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)
         self.config = load_config(model_id)
@@ -75,7 +80,7 @@ class MLXEngine(BaseEngine):
             text = str(output)
         return text
 
-def summarize_file(source_file: str, destination_file: str):
+def summarize_file(source_file: str, destination_file: str, config: dict):
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -84,8 +89,8 @@ def summarize_file(source_file: str, destination_file: str):
         with open(source_file, 'r', encoding='utf-8') as f:
             content = f.read()
             
-        config = get_platform_config("summarizer_config_macos.json")
-        chunk_size = config.get("chunk_size", 200000)
+        chunk_size = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
+        model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
         
         metadata, md_text = parse_markdown(content)
         
@@ -95,7 +100,7 @@ def summarize_file(source_file: str, destination_file: str):
         cache.cleanup_old_entries()
         
         logger.info(f"Initializing MLX Engine...")
-        engine = MLXEngine()
+        engine = MLXEngine(config)
         
         summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash)
         
@@ -105,7 +110,7 @@ def summarize_file(source_file: str, destination_file: str):
                 if key in metadata:
                     sum_metadata[key] = metadata[key]
         
-        sum_metadata['summary_version'] = f"{MODEL_NAME} {VERSION}"
+        sum_metadata['summary_version'] = f"{model_name} {VERSION}"
         sum_metadata['source_md_hash'] = source_md_hash
                     
         full_summary = assemble_markdown(sum_metadata, summary_text)
@@ -127,7 +132,7 @@ def summarize_file(source_file: str, destination_file: str):
         logger.exception(f"Error during summarization: {e}")
         sys.exit(1)
 
-def answer_query(query: str, source_file: str, destination_file: str):
+def answer_query(query: str, source_file: str, destination_file: str, config: dict):
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -137,7 +142,7 @@ def answer_query(query: str, source_file: str, destination_file: str):
             content = f.read()
             
         logger.info(f"Initializing MLX Engine for Q&A...")
-        engine = MLXEngine()
+        engine = MLXEngine(config)
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
         
@@ -176,10 +181,12 @@ def main():
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     
     args = parser.parse_args()
+    config = get_platform_config("summarizer_config_macos.json", DEFAULT_CONFIG)
+    
     if args.query:
-        answer_query(args.query, args.source, args.destination)
+        answer_query(args.query, args.source, args.destination, config)
     else:
-        summarize_file(args.source, args.destination)
+        summarize_file(args.source, args.destination, config)
 
 if __name__ == "__main__":
     main()

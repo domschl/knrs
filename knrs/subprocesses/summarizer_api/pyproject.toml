@@ -1,0 +1,17 @@
+[project]
+name = "summarizer-api"
+version = "0.1.0"
+description = "REST API based summarizer"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "pyyaml",
+    "rich",
+    "summarizer_core",
+]
+
+[tool.uv.sources]
+summarizer_core = { path = "../summarizer_core", editable = true }
+
+[project.scripts]
+summarizer-api = "summarizer_api:main"
