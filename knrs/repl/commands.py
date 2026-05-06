@@ -270,7 +270,7 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
                 dst_path = Path(dst_fd.name)
                 
             try:
-                success = answer_query(query, src_path, dst_path, cfg.summarizer_name)
+                success = answer_query(query, src_path, dst_path, cfg.summarizer_name, summary_max_tokens=2500)
                 if success and dst_path.exists():
                     with open(dst_path, "r", encoding="utf-8") as f:
                         answer_text = f.read()

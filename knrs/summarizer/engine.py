@@ -39,6 +39,7 @@ def summarize_file(
     summarizer_name: str,
     *,
     dry_run: bool = False,
+    summary_max_tokens: int = 1500,
 ) -> bool:
     """
     Summarise *source_md* and write the result to *target_path*.
@@ -81,7 +82,7 @@ def summarize_file(
     logger.info("Summarising: %s", source_md.name)
     try:
         p = subprocess.Popen(
-            [python_exe, str(script), str(source_md), str(target_path)]
+            [python_exe, str(script), str(source_md), str(target_path), "--summary_max_tokens", str(summary_max_tokens)]
         )
         try:
             p.wait()
@@ -117,6 +118,7 @@ def answer_query(
     source_md: Path,
     target_path: Path,
     summarizer_name: str,
+    summary_max_tokens: int = 1500,
 ) -> bool:
     """
     Answer a query based on the contents of *source_md* and write the result to *target_path*.
@@ -142,7 +144,7 @@ def answer_query(
     logger.info("Answering query: %s", query)
     try:
         p = subprocess.Popen(
-            [python_exe, str(script), str(source_md), str(target_path), "--query", query]
+            [python_exe, str(script), str(source_md), str(target_path), "--query", query, "--summary_max_tokens", str(summary_max_tokens)]
         )
         try:
             p.wait()

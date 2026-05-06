@@ -80,7 +80,7 @@ class MLXEngine(BaseEngine):
             text = str(output)
         return text
 
-def summarize_file(source_file: str, destination_file: str, config: dict):
+def summarize_file(source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -102,7 +102,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict):
         logger.info(f"Initializing MLX Engine...")
         engine = MLXEngine(config)
         
-        summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash)
+        summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash, final_sum_tokens=summary_max_tokens)
         
         sum_metadata = {}
         if metadata:
@@ -132,7 +132,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict):
         logger.exception(f"Error during summarization: {e}")
         sys.exit(1)
 
-def answer_query(query: str, source_file: str, destination_file: str, config: dict):
+def answer_query(query: str, source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -152,7 +152,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
             if formatted:
                 prompt = formatted
                 
-        output = engine.generate(prompt, max_tokens=1500)
+        output = engine.generate(prompt, max_tokens=summary_max_tokens)
         
         target_dir = os.path.dirname(destination_file)
         if target_dir and not os.path.exists(target_dir):
@@ -179,14 +179,15 @@ def main():
     parser.add_argument("source", help="Path to the source markdown file")
     parser.add_argument("destination", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
     
     args = parser.parse_args()
     config = get_platform_config("summarizer_config_macos.json", DEFAULT_CONFIG)
     
     if args.query:
-        answer_query(args.query, args.source, args.destination, config)
+        answer_query(args.query, args.source, args.destination, config, args.summary_max_tokens)
     else:
-        summarize_file(args.source, args.destination, config)
+        summarize_file(args.source, args.destination, config, args.summary_max_tokens)
 
 if __name__ == "__main__":
     main()
