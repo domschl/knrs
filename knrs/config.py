@@ -48,6 +48,8 @@ class KnrsConfig:
     summarizer_name: str = "summarizer_linux"
     embedder_name: str = "embedder_hf"
     calibre_library_name: str = "Calibre_Library"
+    vector_chunk_size: int = 3000    # Chars. Approx 750 tokens. May require --ubatch-size 1024 on llama-server.
+    vector_chunk_overlap: int = 600
     external_library: Path = field(default_factory=lambda: Path("~/MetaLibrary").expanduser().resolve())
 
     # ------------------------------------------------------------------ #
@@ -146,6 +148,14 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(external_library_raw, str):
         raise ValueError("Config key 'external_library' must be a string.")
 
+    vector_chunk_size = raw.get("vector_chunk_size", 3000)
+    if not isinstance(vector_chunk_size, int):
+        raise ValueError("Config key 'vector_chunk_size' must be an integer.")
+
+    vector_chunk_overlap = raw.get("vector_chunk_overlap", 600)
+    if not isinstance(vector_chunk_overlap, int):
+        raise ValueError("Config key 'vector_chunk_overlap' must be an integer.")
+
     cfg = KnrsConfig(
         calibre_path=resolve(raw["calibre_path"]),
         notes_path=resolve(raw["notes_path"]),
@@ -157,6 +167,8 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         embedder_name=embedder_name,
         calibre_library_name=calibre_library_name,
         external_library=resolve(external_library_raw),
+        vector_chunk_size=vector_chunk_size,
+        vector_chunk_overlap=vector_chunk_overlap,
     )
 
     logger.debug("Config loaded from %s", path)
@@ -195,6 +207,8 @@ def print_config(cfg: KnrsConfig) -> None:
         ("embedder_name", cfg.embedder_name),
         ("calibre_library_name", cfg.calibre_library_name),
         ("external_library", str(cfg.external_library)),
+        ("vector_chunk_size", str(cfg.vector_chunk_size)),
+        ("vector_chunk_overlap", str(cfg.vector_chunk_overlap)),
     ]
     for key, val in rows:
         table.add_row(key, val)
