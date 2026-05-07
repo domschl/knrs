@@ -3,7 +3,7 @@ knrs.vector.indexer — Differential chunk-and-embed indexer.
 
 Sources indexed:
   - KnrsData/MarkdownBooks  (prefix ``books:``)
-  - Wiki/Notes              (prefix ``wiki:``)   — AINotes excluded.
+  - Wiki/Notes & AINotes    (prefix ``wiki:``)
 
 Differential strategy
 ---------------------
@@ -245,7 +245,6 @@ class KnrsIndexer:
             _scan_source(
                 wiki_dir,
                 _LABEL_WIKI,
-                excludes=[wiki_dir / "AINotes"],
             )
         )
         logger.info(

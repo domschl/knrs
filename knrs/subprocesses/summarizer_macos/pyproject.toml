@@ -1,7 +1,7 @@
 [project]
 name = "summarizer-macos"
 version = "0.1.0"
-description = "MLX based Gemini 4 summarizer for macOS"
+description = "MLX based Gemma 4 summarizer for macOS"
 requires-python = ">=3.13"
 dependencies = [
     "mlx-vlm>=0.4.3",

@@ -174,9 +174,25 @@ def show_timeline(
     
     console = Console()
     
-    if not output_file.exists():
-        console.print("[red]Timeline file not found. Run extraction first.[/red]")
+    results = query_timeline_data(output_file, start_year, end_year, context_filters, keywords)
+    
+    if not results:
+        console.print("[yellow]No timeline events matched the filter.[/yellow]")
         return
+        
+    _render_events(results, raw, console)
+
+def query_timeline_data(
+    output_file: Path,
+    start_year: float | None = None,
+    end_year: float | None = None,
+    context_filters: list[str] | None = None,
+    keywords: list[str] | None = None
+) -> list[dict]:
+    """Load and filter timeline events, returning the raw data list."""
+    from knrs.utils.search import SearchTools
+    if not output_file.exists():
+        return []
         
     with output_file.open("r", encoding="utf-8") as f:
         events = json.load(f)
@@ -206,11 +222,7 @@ def show_timeline(
             
         filtered.append(ev)
         
-    if not filtered:
-        console.print("[yellow]No timeline events matched the filters.[/yellow]")
-        return
-        
-    # Categorize and filter
+    # Categorize and filter strictly within range
     results = []
     if start_year is not None and end_year is not None and start_year < end_year:
         for ev in filtered:
@@ -218,12 +230,29 @@ def show_timeline(
                 results.append(ev)
     else:
         results = filtered
-
-    if not results:
-        console.print("[yellow]No timeline events matched the strictly-within filter.[/yellow]")
-        return
         
-    _render_events(results, raw, console)
+    return results
+
+def format_timeline_as_markdown_table(events: list[dict]) -> str:
+    """Format a list of timeline events as a Markdown table."""
+    if not events:
+        return ""
+        
+    exclude = {"start_year", "end_year", "source_file", "context", "Date"}
+    
+    headers = ["Date", "Description", "Context"]
+    lines = []
+    lines.append(f"| {' | '.join(headers)} |")
+    lines.append(f"| {' | '.join(['---']*len(headers))} |")
+    for ev in events:
+        date_str = ev.get("Date", f"{ev['start_year']}")
+        ctx_str = ev.get("context", "")
+        # Collect all other fields as description
+        desc = " | ".join(str(v) for k, v in ev.items() if k not in exclude)
+        lines.append(f"| {date_str} | {desc} | {ctx_str} |")
+        
+    return "\n".join(lines)
+
 
 def _render_events(events: list[dict], raw: bool, console) -> None:
     from rich.table import Table

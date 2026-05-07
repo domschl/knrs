@@ -63,6 +63,8 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row(r"/timeline \[--force] \[--from YYYY-MM-DD] \[--to YYYY-MM-DD] \[--context PAT] \[--raw] \[keywords]", "Extract and filter timelines; supports date ranges, context, and keyword search")
     table.add_row(r"/index \[--force] \[--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything AND overrides git safety; default checkpoint: 50 files")
     table.add_row(r"/search <query> \[--raw] \[--highlight] \[--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
+    table.add_row(r"/research <topic> \[--auto] \[--resume]", "Run autonomous research agent on the given topic. Shows plan first unless --auto is passed. Use --resume to continue the last session.")
+    table.add_row("/research-list", "List past research sessions")
     table.add_row("/config", "Show current configuration")
     table.add_row("/backends", "List available backends for the current platform")
     table.add_row("/models <backend>", "List available and validated models for a specific backend")
@@ -500,6 +502,146 @@ def cmd_set_param(args: list[str], cfg: KnrsConfig):
         else:
             console.print(f"[yellow]Attempted to update {filename} but it may not exist yet or failed.[/yellow]")
 
+def cmd_research(args: list[str], cfg: KnrsConfig):
+    if not args:
+        console.print("[red]Usage: /research <topic> [--auto] [--resume][/red]")
+        return
+        
+    auto = "--auto" in args
+    resume = "--resume" in args
+    
+    # Filter out flags to get the topic
+    topic_parts = [a for a in args if not a.startswith("--")]
+    if not topic_parts and not resume:
+        console.print("[red]Please specify a research topic.[/red]")
+        return
+        
+    topic = " ".join(topic_parts)
+    
+    from knrs.agent.agent import ResearchAgent
+    from pathlib import Path
+    
+    # Get model choice from global config or fallback
+    model_name = getattr(cfg, "agent_model", "gemma-4-26B-A4B-it-UD-Q4_K_XL")
+    
+    # Checkpoint path
+    safe_topic = "".join(c for c in topic if c.isalnum() or c in (" ", "-", "_")).strip()
+    if not safe_topic:
+        safe_topic = "ResumeSession"
+    ckpt_path = cfg.wiki_path / "AINotes" / "Research" / ".checkpoints" / f"{safe_topic}.json"
+    
+    agent = ResearchAgent(cfg, model_name)
+    
+    if resume:
+        if ckpt_path.exists():
+            agent.load_checkpoint(ckpt_path)
+            console.print(f"[green]Resumed session from {ckpt_path.name}[/green]")
+            # If we don't have a new topic, just use what we have in history.
+            if topic:
+                agent.history.append({"role": "user", "content": f"New instruction: {topic}"})
+        else:
+            console.print(f"[red]No checkpoint found for topic '{topic}' to resume from.[/red]")
+            return
+    else:
+        # Initial prompt
+        init_prompt = f"Please research the following topic: '{topic}'.\n\nDevelop a plan and use the available tools to find relevant information. Then synthesize your findings into a comprehensive research document."
+        agent.history.append({"role": "user", "content": init_prompt})
+        
+    # Execute loop
+    step_count = 0
+    max_steps = 30
+    
+    while step_count < max_steps:
+        console.print(f"[dim]Agent thinking (Step {step_count+1})...[/dim]")
+        
+        try:
+            is_done, msg, tool_calls = agent.step()
+        except Exception as e:
+            console.print(f"[red]Agent Error: {e}[/red]")
+            break
+            
+        agent.save_checkpoint(ckpt_path)
+        
+        # Display the agent's thought/message (strip out the JSON block for cleaner output if desired, or show it)
+        # We'll just show it via markdown
+        from rich.markdown import Markdown
+        console.print(Markdown(msg))
+        
+        if is_done:
+            console.print("[bold green]Research Task Complete![/bold green]")
+            break
+            
+        if tool_calls:
+            stop_session = False
+            for tool_call in tool_calls:
+                tool_name = tool_call.get("tool")
+                tool_args = tool_call.get("args", {})
+                
+                console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
+                
+                if not auto:
+                    choice = input("Execute tool? [Y/n/stop]: ").strip().lower()
+                    if choice == "n":
+                        feedback = input("Provide feedback to the agent instead: ")
+                        agent.history.append({"role": "user", "content": f"User rejected tool call {tool_name}. Feedback: {feedback}"})
+                        continue
+                    elif choice == "stop":
+                        console.print("[yellow]Stopping research session.[/yellow]")
+                        stop_session = True
+                        break
+                        
+                console.print(f"[dim]Executing {tool_name}...[/dim]")
+                try:
+                    result = agent.execute_tool(tool_call)
+                    # print a short preview of the result
+                    preview = result[:200].replace("\n", " ") + "..." if len(result) > 200 else result
+                    console.print(f"[dim]Tool result preview: {preview}[/dim]")
+                except Exception as e:
+                    console.print(f"[red]Tool execution error: {e}[/red]")
+                    agent.history.append({"role": "user", "content": f"Tool execution failed with error: {e}"})
+                    
+            agent.save_checkpoint(ckpt_path)
+            if stop_session:
+                break
+        else:
+            # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
+            nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
+            if not auto:
+                resp = input("Agent is waiting. Reply (or press enter to let it continue): ")
+                if resp:
+                    agent.history.append({"role": "user", "content": resp})
+                else:
+                    agent.history.append({"role": "user", "content": nudge_msg})
+            else:
+                agent.history.append({"role": "user", "content": nudge_msg})
+                
+        step_count += 1
+        
+    if step_count >= max_steps:
+        console.print("[yellow]Agent reached maximum steps limit.[/yellow]")
+
+def cmd_research_list(args: list[str], cfg: KnrsConfig):
+    research_dir = cfg.wiki_path / "AINotes" / "Research"
+    if not research_dir.exists():
+        console.print("[yellow]No research directory found.[/yellow]")
+        return
+        
+    console.print("[bold cyan]Past Research Sessions:[/bold cyan]")
+    from rich.tree import Tree
+    tree = Tree("Research")
+    
+    for item in sorted(research_dir.iterdir()):
+        if item.name.startswith("."): continue
+        if item.is_dir():
+            branch = tree.add(f"[bold]{item.name}[/bold]")
+            for sub in sorted(item.iterdir()):
+                if sub.is_file() and sub.suffix == ".md":
+                    branch.add(sub.name)
+        elif item.is_file() and item.suffix == ".md":
+            tree.add(item.name)
+            
+    console.print(tree)
+
 COMMANDS = {
     "/help": cmd_help,
     "/sync": cmd_sync,
@@ -516,4 +658,6 @@ COMMANDS = {
     "/models": cmd_models,
     "/set-backend": cmd_set_backend,
     "/set-param": cmd_set_param,
+    "/research": cmd_research,
+    "/research-list": cmd_research_list,
 }

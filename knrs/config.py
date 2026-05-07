@@ -47,6 +47,7 @@ class KnrsConfig:
     target_series: list[str] = field(default_factory=list)
     summarizer_name: str = "summarizer_linux"
     embedder_name: str = "embedder_hf"
+    agent_model: str = "gemma-4-26B-A4B-it-UD-Q4_K_XL"
     calibre_library_name: str = "Calibre_Library"
     vector_chunk_size: int = 3000    # Chars. Approx 750 tokens. May require --ubatch-size 1024 on llama-server.
     vector_chunk_overlap: int = 600
@@ -139,6 +140,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     embedder_name = raw.get("embedder_name", "embedder_hf")
     if not isinstance(embedder_name, str):
         raise ValueError("Config key 'embedder_name' must be a string.")
+
+    agent_model = raw.get("agent_model", "gemma-4-26B-A4B-it-UD-Q4_K_XL")
+    if not isinstance(agent_model, str):
+        raise ValueError("Config key 'agent_model' must be a string.")
         
     calibre_library_name = raw.get("calibre_library_name", "Calibre_Library")
     if not isinstance(calibre_library_name, str):
@@ -165,6 +170,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         target_series=target_series,
         summarizer_name=summarizer_name,
         embedder_name=embedder_name,
+        agent_model=agent_model,
         calibre_library_name=calibre_library_name,
         external_library=resolve(external_library_raw),
         vector_chunk_size=vector_chunk_size,
@@ -180,6 +186,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  target_series:   %s", cfg.target_series or "(all)")
     logger.debug("  summarizer_name: %s", cfg.summarizer_name)
     logger.debug("  embedder_name:   %s", cfg.embedder_name)
+    logger.debug("  agent_model:     %s", cfg.agent_model)
     logger.debug("  calibre_library_name: %s", cfg.calibre_library_name)
     logger.debug("  external_library: %s", cfg.external_library)
 
@@ -205,6 +212,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("target_series", ", ".join(cfg.target_series) or "(all)"),
         ("summarizer_name", cfg.summarizer_name),
         ("embedder_name", cfg.embedder_name),
+        ("agent_model", cfg.agent_model),
         ("calibre_library_name", cfg.calibre_library_name),
         ("external_library", str(cfg.external_library)),
         ("vector_chunk_size", str(cfg.vector_chunk_size)),
