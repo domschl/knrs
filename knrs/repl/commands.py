@@ -262,9 +262,40 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
         if summarize and results:
             import tempfile
             from knrs.summarizer.engine import answer_query
+            from knrs.calibre.converter import _split_frontmatter
+            import yaml
             
             console.print("[bold yellow]Generating summary from search results...[/bold yellow]")
-            combined_text = "\n\n---\n\n".join([f"Document: {Path(r.bare_path).name}\n\n{text}" for _, text, r in processed_results])
+            
+            snippets_for_summary = []
+            for _, text, r in processed_results:
+                title = "Unknown Title"
+                authors = "Unknown Author"
+                
+                if r.source_label == "books":
+                    file_path = searcher.config.markdown_books / r.bare_path
+                elif r.source_label == "wiki":
+                    file_path = searcher.config.wiki_path / r.bare_path
+                else:
+                    file_path = None
+                    
+                if file_path and file_path.exists():
+                    try:
+                        content = file_path.read_text(encoding="utf-8")
+                        fm, _ = _split_frontmatter(content)
+                        if fm:
+                            meta = yaml.safe_load(fm) or {}
+                            title = meta.get("title", title)
+                            authors = meta.get("authors", authors)
+                            if isinstance(authors, list):
+                                authors = ", ".join(authors)
+                    except Exception:
+                        pass
+                
+                doc_meta = f"Document: {Path(r.bare_path).name}\nTitle: {title}\nAuthor(s): {authors}\n\n{text}"
+                snippets_for_summary.append(doc_meta)
+                
+            combined_text = "\n\n---\n\n".join(snippets_for_summary)
             
             with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".md") as src_fd:
                 src_fd.write(combined_text)
@@ -274,7 +305,8 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
                 dst_path = Path(dst_fd.name)
                 
             try:
-                success = answer_query(query, src_path, dst_path, cfg.summarizer_name, summary_max_tokens=2500)
+                enhanced_query = f"{query}\n\nIMPORTANT: When generating your answer, you MUST include references (Title and Author) to the specific sources used for each part of your summary."
+                success = answer_query(enhanced_query, src_path, dst_path, cfg.summarizer_name, summary_max_tokens=2500)
                 if success and dst_path.exists():
                     with open(dst_path, "r", encoding="utf-8") as f:
                         answer_text = f.read()
