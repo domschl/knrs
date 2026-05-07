@@ -32,7 +32,20 @@ def _setup_readline():
             logger.warning("Could not read history file %s: %s", hist, e)
 
     readline.set_history_length(1000)
-    atexit.register(lambda: readline.write_history_file(str(hist)))
+    
+    def clean_and_save_history():
+        try:
+            length = readline.get_current_history_length()
+            # Iterate backwards to safely remove items without shifting indices we haven't visited
+            for i in range(length - 1, -1, -1):
+                item = readline.get_history_item(i + 1)
+                if item is not None and ('\x04' in item or not item.strip()):
+                    readline.remove_history_item(i)
+            readline.write_history_file(str(hist))
+        except Exception as e:
+            logger.warning("Could not save history file %s: %s", hist, e)
+            
+    atexit.register(clean_and_save_history)
 
     def completer(text: str, state: int) -> str | None:
         # Only complete if the text starts with /
