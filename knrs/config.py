@@ -214,3 +214,48 @@ def print_config(cfg: KnrsConfig) -> None:
         table.add_row(key, val)
 
     rprint(Panel(table, title="[bold]knrs configuration[/bold]", expand=False))
+
+def update_knrs_config(key: str, value: Any, config_path: Path | None = None) -> bool:
+    """Update a single key in knrs.json and save it."""
+    path = config_path or knrs_config_file()
+    if not path.exists():
+        return False
+        
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+            
+        raw[key] = value
+        
+        temp_path = path.with_suffix(".json.tmp")
+        with temp_path.open("w", encoding="utf-8") as fh:
+            json.dump(raw, fh, indent=4)
+        
+        temp_path.replace(path)
+        return True
+    except Exception as e:
+        logger.error("Failed to update knrs.json: %s", e)
+        return False
+
+def update_platform_config(filename: str, key: str, value: Any) -> bool:
+    """Update a specific backend or shared config file in ~/.config/knrs/."""
+    path = knrs_config_file().parent / filename
+    if not path.exists():
+        logger.error("Config file not found: %s", path)
+        return False
+        
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+            
+        raw[key] = value
+        
+        temp_path = path.with_suffix(".json.tmp")
+        with temp_path.open("w", encoding="utf-8") as fh:
+            json.dump(raw, fh, indent=4)
+            
+        temp_path.replace(path)
+        return True
+    except Exception as e:
+        logger.error("Failed to update %s: %s", filename, e)
+        return False

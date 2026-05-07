@@ -138,13 +138,25 @@ def one_shot_mode(mode: str, input_path: Path, output_path: Path) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) == 2 and sys.argv[1] == "--server":
+    if len(sys.argv) == 2 and sys.argv[1] == "--capabilities":
+        cap = {
+            "name": "embedder_hf",
+            "type": "embedder",
+            "platform": "any",
+            "validated_models": [MODEL_NAME],
+            "available_models": [MODEL_NAME],
+            "parameters": ["model_name"]
+        }
+        print(json.dumps(cap))
+        sys.exit(0)
+    elif len(sys.argv) == 2 and sys.argv[1] == "--server":
         server_mode()
     elif len(sys.argv) == 5 and sys.argv[1] == "--mode":
         mode = sys.argv[2]
         one_shot_mode(mode, Path(sys.argv[3]), Path(sys.argv[4]))
     else:
         print("Usage:")
+        print("  embedder_hf.py --capabilities                     # print capabilities as JSON")
         print("  embedder_hf.py --server                           # persistent server mode")
         print("  embedder_hf.py --mode query|document in.json out.npy # one-shot mode")
         sys.exit(1)

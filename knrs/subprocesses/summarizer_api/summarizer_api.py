@@ -164,13 +164,46 @@ def main():
     w.start()
 
     parser = argparse.ArgumentParser(description="Summarize Markdown using REST API")
-    parser.add_argument("source", help="Path to the source markdown file")
-    parser.add_argument("destination", help="Path to the destination summary markdown file")
+    parser.add_argument("source", nargs="?", help="Path to the source markdown file")
+    parser.add_argument("destination", nargs="?", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
+    parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     args = parser.parse_args()
     
     server_config = get_llm_server_config()
+    
+    if args.capabilities:
+        import json
+        url = server_config.get("url", "http://localhost:8180").rstrip("/")
+        api_key = server_config.get("api_key")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        
+        try:
+            response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
+            response.raise_for_status()
+            data = response.json()
+            available_models = [m["id"] for m in data.get("data", [])]
+        except Exception as e:
+            logger.error(f"Failed to query {url}/v1/models: {e}")
+            sys.exit(1)
+            
+        cap = {
+            "name": "summarizer_api",
+            "type": "summarizer",
+            "platform": "any",
+            "validated_models": ["gemma-4-26B-A4B-it-UD-Q4_K_XL", "gemma-4-31B-it-UD-Q4_K_XL"],
+            "available_models": available_models,
+            "parameters": ["chunk_size", "model_name"]
+        }
+        print(json.dumps(cap))
+        sys.exit(0)
+        
+    if not args.source or not args.destination:
+        parser.error("source and destination are required unless --capabilities is passed")
+
     config = get_platform_config("summarizer_config_api.json", DEFAULT_LOCAL_CONFIG)
     
     if args.query:

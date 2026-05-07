@@ -127,10 +127,28 @@ def convert(source_file: str, destination_file: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert PDF/EPUB to Markdown (macOS)")
-    parser.add_argument("source", help="Path to the source file (e.g. .pdf, .epub)")
-    parser.add_argument("destination", help="Path to the destination Markdown file")
+    parser.add_argument("source", nargs="?", help="Path to the source file (e.g. .pdf, .epub)")
+    parser.add_argument("destination", nargs="?", help="Path to the destination Markdown file")
+    parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     
     args = parser.parse_args()
+
+    if args.capabilities:
+        import json
+        cap = {
+            "name": "converter_macos",
+            "type": "converter",
+            "platform": "macos",
+            "validated_models": ["pandoc", "docling"],
+            "available_models": ["pandoc", "docling"],
+            "parameters": []
+        }
+        print(json.dumps(cap))
+        sys.exit(0)
+
+    if not args.source or not args.destination:
+        parser.error("source and destination are required unless --capabilities is passed")
+
     convert(args.source, args.destination)
 
 if __name__ == "__main__":

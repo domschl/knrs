@@ -114,13 +114,37 @@ def main():
     api_key = server_cfg.get("api_key")
     model = local_cfg["model_name"]
 
-    if len(sys.argv) == 2 and sys.argv[1] == "--server":
+    if len(sys.argv) == 2 and sys.argv[1] == "--capabilities":
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        try:
+            response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
+            response.raise_for_status()
+            data = response.json()
+            available_models = [m["id"] for m in data.get("data", [])]
+        except Exception as e:
+            logger.error(f"Failed to query {url}/v1/models: {e}")
+            sys.exit(1)
+
+        cap = {
+            "name": "embedder_api",
+            "type": "embedder",
+            "platform": "any",
+            "validated_models": ["embeddinggemma-300M-Q8_0"],
+            "available_models": available_models,
+            "parameters": ["model_name", "batch_size"]
+        }
+        print(json.dumps(cap))
+        sys.exit(0)
+    elif len(sys.argv) == 2 and sys.argv[1] == "--server":
         server_mode(url, api_key, model)
     elif len(sys.argv) == 5 and sys.argv[1] == "--mode":
         mode = sys.argv[2]
         _embed(url, api_key, model, Path(sys.argv[3]), Path(sys.argv[4]))
     else:
         print("Usage:")
+        print("  embedder_api.py --capabilities")
         print("  embedder_api.py --server")
         print("  embedder_api.py --mode query|document in.json out.npy")
         sys.exit(1)
