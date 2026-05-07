@@ -35,13 +35,16 @@ def _setup_readline():
     
     def clean_and_save_history():
         try:
-            length = readline.get_current_history_length()
-            # Iterate backwards to safely remove items without shifting indices we haven't visited
-            for i in range(length - 1, -1, -1):
-                item = readline.get_history_item(i + 1)
-                if item is not None and ('\x04' in item or not item.strip()):
-                    readline.remove_history_item(i)
             readline.write_history_file(str(hist))
+            # Post-process the file to safely remove EOF characters without triggering libedit escaping bugs
+            if hist.exists():
+                with open(hist, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                
+                with open(hist, "w", encoding="utf-8") as f:
+                    for line in lines:
+                        if '\x04' not in line and line.strip():
+                            f.write(line)
         except Exception as e:
             logger.warning("Could not save history file %s: %s", hist, e)
             
