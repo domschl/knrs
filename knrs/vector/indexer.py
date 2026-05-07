@@ -92,15 +92,24 @@ class KnrsIndexer:
     # Chunking                                                             #
     # ------------------------------------------------------------------ #
 
-    def chunk_text(self, text: str, chunk_size: int = 3000, overlap: int = 600) -> list[str]:
-        """Simple character-based sliding-window chunking."""
-        if len(text) <= chunk_size:
+    def chunk_text(self, text: str) -> list[str]:
+        """
+        Simple character-based sliding-window chunking.
+
+        Note on llama-server: Chunks must fit into the server's logical batch
+        size (--ubatch-size, default 512). If 3000 chars exceed this (~750 tokens),
+        increase --ubatch-size to 1024. --batch-size (physical batch)
+        defaults to 2048 and must be >= --ubatch-size.
+        """
+        size = self.config.vector_chunk_size
+        overlap = self.config.vector_chunk_overlap
+        if len(text) <= size:
             return [text]
         chunks: list[str] = []
         start = 0
         while start < len(text):
-            chunks.append(text[start:start + chunk_size])
-            start += chunk_size - overlap
+            chunks.append(text[start:start + size])
+            start += size - overlap
         return chunks
 
     # ------------------------------------------------------------------ #
@@ -117,13 +126,13 @@ class KnrsIndexer:
             if "file_hashes" not in meta:
                 meta["file_hashes"] = {}
             if "chunk_size" not in meta:
-                meta["chunk_size"] = 3000
-                meta["overlap"] = 600
+                meta["chunk_size"] = self.config.vector_chunk_size
+                meta["overlap"] = self.config.vector_chunk_overlap
             return embeddings, meta
         return np.array([], dtype=np.float32), {
             "model": self.config.embedder_name,
-            "chunk_size": 3000,
-            "overlap": 600,
+            "chunk_size": self.config.vector_chunk_size,
+            "overlap": self.config.vector_chunk_overlap,
             "file_hashes": {},
             "chunks": [],
             "full_texts": [],
@@ -201,8 +210,8 @@ class KnrsIndexer:
             embeddings = np.array([], dtype=np.float32)
             meta: dict = {
                 "model": self.config.embedder_name,
-                "chunk_size": 3000,
-                "overlap": 600,
+                "chunk_size": self.config.vector_chunk_size,
+                "overlap": self.config.vector_chunk_overlap,
                 "file_hashes": {},
                 "chunks": [],
                 "full_texts": [],
@@ -210,16 +219,17 @@ class KnrsIndexer:
         else:
             embeddings, meta = self._load_state()
             # If the chunking parameters have changed, we must re-index everything
-            if meta.get("chunk_size") != 3000 or meta.get("overlap") != 600:
+            if meta.get("chunk_size") != self.config.vector_chunk_size or meta.get("overlap") != self.config.vector_chunk_overlap:
                 logger.warning(
-                    "Chunking parameters changed (was %s/%s, now 3000/600). Discarding index state.",
-                    meta.get("chunk_size", "unknown"), meta.get("overlap", "unknown")
+                    "Chunking parameters changed (was %s/%s, now %s/%s). Discarding index state.",
+                    meta.get("chunk_size", "unknown"), meta.get("overlap", "unknown"),
+                    self.config.vector_chunk_size, self.config.vector_chunk_overlap
                 )
                 embeddings = np.array([], dtype=np.float32)
                 meta = {
                     "model": self.config.embedder_name,
-                    "chunk_size": 3000,
-                    "overlap": 600,
+                    "chunk_size": self.config.vector_chunk_size,
+                    "overlap": self.config.vector_chunk_overlap,
                     "file_hashes": {},
                     "chunks": [],
                     "full_texts": [],
