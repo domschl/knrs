@@ -64,6 +64,10 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row(r"/index \[--force] \[--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything AND overrides git safety; default checkpoint: 50 files")
     table.add_row(r"/search <query> \[--raw] \[--highlight] \[--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
     table.add_row("/config", "Show current configuration")
+    table.add_row("/backends", "List available backends for the current platform")
+    table.add_row("/models <backend>", "List available and validated models for a specific backend")
+    table.add_row("/set-backend <type> <backend>", "Set the active backend for a given type (e.g., summarizer, embedder)")
+    table.add_row("/set-param <backend|global> <key> <value>", "Set a configuration parameter for a specific backend, or global/shared config")
     table.add_row("/exit", "Exit the REPL")
     
     console.print(table)
@@ -322,6 +326,148 @@ def cmd_config(args: list[str], cfg: KnrsConfig):
     from knrs.config import print_config
     print_config(cfg)
 
+_backend_manager = None
+def _get_backend_manager():
+    global _backend_manager
+    if _backend_manager is None:
+        from knrs.repl.backends import BackendManager
+        from knrs.paths import resolve
+        import logging
+        logging.getLogger("knrs.repl.backends").setLevel(logging.WARNING)
+        console.print("[dim]Scanning subprocesses...[/dim]")
+        _backend_manager = BackendManager(resolve("~/Codeberg/knrs/knrs/subprocesses"))
+    return _backend_manager
+
+def cmd_backends(args: list[str], cfg: KnrsConfig):
+    mgr = _get_backend_manager()
+    table = Table(title="Available Backends")
+    table.add_column("Name", style="cyan")
+    table.add_column("Type", style="magenta")
+    table.add_column("Platform", style="green")
+    table.add_column("Active", justify="center")
+    
+    active_backends = [cfg.summarizer_name, cfg.embedder_name]
+    
+    for name, cap in mgr.get_backends().items():
+        is_active = "✓" if name in active_backends else ""
+        table.add_row(name, cap.get("type", "unknown"), cap.get("platform", "any"), is_active)
+        
+    console.print(table)
+
+def cmd_models(args: list[str], cfg: KnrsConfig):
+    if not args:
+        console.print("[red]Usage: /models <backend_name>[/red]")
+        return
+        
+    backend_name = args[0]
+    mgr = _get_backend_manager()
+    cap = mgr.get_backend(backend_name)
+    
+    if not cap:
+        console.print(f"[red]Unknown backend: {backend_name}[/red]")
+        return
+        
+    validated = set(cap.get("validated_models", []))
+    available = set(cap.get("available_models", []))
+    
+    table = Table(title=f"Models for {backend_name}")
+    table.add_column("Model Name", style="cyan")
+    table.add_column("Validated", justify="center")
+    table.add_column("Available", justify="center")
+    
+    all_models = sorted(validated.union(available))
+    for m in all_models:
+        v_mark = "[green]✓[/green]" if m in validated else ""
+        a_mark = "[green]✓[/green]" if m in available else ""
+        table.add_row(m, v_mark, a_mark)
+        
+    console.print(table)
+
+def cmd_set_backend(args: list[str], cfg: KnrsConfig):
+    if len(args) != 2:
+        console.print("[red]Usage: /set-backend <type> <backend_name>[/red]")
+        console.print("Example: /set-backend summarizer summarizer_api")
+        return
+        
+    btype, bname = args[0].lower(), args[1]
+    mgr = _get_backend_manager()
+    cap = mgr.get_backend(bname)
+    
+    if not cap:
+        console.print(f"[red]Unknown backend: {bname}[/red]")
+        return
+        
+    if cap.get("type") != btype:
+        console.print(f"[red]Backend {bname} is of type {cap.get('type')}, not {btype}[/red]")
+        return
+        
+    from knrs.config import update_knrs_config
+    key = f"{btype}_name"
+    
+    if update_knrs_config(key, bname):
+        setattr(cfg, key, bname)
+        console.print(f"[green]Successfully set active {btype} to {bname}[/green]")
+    else:
+        console.print(f"[red]Failed to update configuration[/red]")
+
+def cmd_set_param(args: list[str], cfg: KnrsConfig):
+    if len(args) < 3:
+        console.print("[red]Usage: /set-param <backend|global|llm-server> <key> <value>[/red]")
+        console.print("Example: /set-param summarizer_api model_name gemma-4-26b")
+        return
+        
+    target, key = args[0], args[1]
+    value_str = " ".join(args[2:])
+    
+    # Try to parse value as int/float/bool if possible
+    if value_str.lower() == "true": value = True
+    elif value_str.lower() == "false": value = False
+    else:
+        try:
+            if "." in value_str: value = float(value_str)
+            else: value = int(value_str)
+        except ValueError:
+            value = value_str
+
+    from knrs.config import update_knrs_config, update_platform_config
+    
+    if target == "global":
+        if update_knrs_config(key, value):
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+            console.print(f"[green]Successfully updated global config: {key} = {value}[/green]")
+        else:
+            console.print("[red]Failed to update global config[/red]")
+    elif target == "llm-server":
+        if update_platform_config("llm_server.json", key, value):
+            console.print(f"[green]Successfully updated llm-server config: {key} = {value}[/green]")
+        else:
+            console.print("[red]Failed to update llm-server config[/red]")
+    else:
+        # Assume it's a backend name
+        mgr = _get_backend_manager()
+        cap = mgr.get_backend(target)
+        if not cap:
+            console.print(f"[red]Unknown target or backend: {target}[/red]")
+            return
+            
+        btype = cap.get("type", "unknown")
+        # Convention: platform configs are named like summarizer_config_api.json, or embedder_config_hf.json
+        # Wait, the naming convention isn't perfectly uniform.
+        # It's usually <type>_config_<suffix>.json. Let's just try to infer it.
+        # summarizer_api -> summarizer_config_api.json
+        # summarizer_macos -> summarizer_config_macos.json
+        suffix = target.replace(btype + "_", "")
+        if not suffix or suffix == target:
+            filename = f"{btype}_config_{target}.json"
+        else:
+            filename = f"{btype}_config_{suffix}.json"
+            
+        if update_platform_config(filename, key, value):
+            console.print(f"[green]Successfully updated {filename}: {key} = {value}[/green]")
+        else:
+            console.print(f"[yellow]Attempted to update {filename} but it may not exist yet or failed.[/yellow]")
+
 COMMANDS = {
     "/help": cmd_help,
     "/sync": cmd_sync,
@@ -334,4 +480,8 @@ COMMANDS = {
     "/index": cmd_index,
     "/search": cmd_search,
     "/config": cmd_config,
+    "/backends": cmd_backends,
+    "/models": cmd_models,
+    "/set-backend": cmd_set_backend,
+    "/set-param": cmd_set_param,
 }

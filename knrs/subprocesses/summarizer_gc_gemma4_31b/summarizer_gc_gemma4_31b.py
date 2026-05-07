@@ -275,11 +275,28 @@ def main():
     w.start()
 
     parser = argparse.ArgumentParser(description="Summarize using Gemma 4 31B")
-    parser.add_argument("source", help="Source markdown file")
-    parser.add_argument("destination", help="Destination summary file")
+    parser.add_argument("source", nargs="?", help="Source markdown file")
+    parser.add_argument("destination", nargs="?", help="Destination summary file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
+    parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     args = parser.parse_args()
+    
+    if args.capabilities:
+        cap = {
+            "name": "summarizer_gc_gemma4_31b",
+            "type": "summarizer",
+            "platform": "any",
+            "validated_models": [DEFAULT_CONFIG["model_name"]],
+            "available_models": [DEFAULT_CONFIG["model_name"]],
+            "parameters": ["chunk_size", "model_name", "api_key", "rate_blocked_until"]
+        }
+        print(json.dumps(cap))
+        sys.exit(0)
+
+    if not args.source or not args.destination:
+        parser.error("source and destination are required unless --capabilities is passed")
+
     config = get_platform_config()
     
     if args.query:

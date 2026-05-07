@@ -176,12 +176,29 @@ def main():
     w.start()
 
     parser = argparse.ArgumentParser(description="Summarize Markdown using MLX (macOS)")
-    parser.add_argument("source", help="Path to the source markdown file")
-    parser.add_argument("destination", help="Path to the destination summary markdown file")
+    parser.add_argument("source", nargs="?", help="Path to the source markdown file")
+    parser.add_argument("destination", nargs="?", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
+    parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     
     args = parser.parse_args()
+
+    if args.capabilities:
+        import json
+        cap = {
+            "name": "summarizer_macos",
+            "type": "summarizer",
+            "platform": "macos",
+            "validated_models": [DEFAULT_CONFIG["model_id"]],
+            "available_models": [DEFAULT_CONFIG["model_id"]],
+            "parameters": ["chunk_size", "model_id", "model_name"]
+        }
+        print(json.dumps(cap))
+        sys.exit(0)
+        
+    if not args.source or not args.destination:
+        parser.error("source and destination are required unless --capabilities is passed")
     config = get_platform_config("summarizer_config_macos.json", DEFAULT_CONFIG)
     
     if args.query:
