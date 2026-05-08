@@ -174,7 +174,7 @@ class AgentTools:
                 return f"Error: Cannot write outside {self.research_root}"
                 
             atomic_write(p, content)
-            return f"Successfully wrote to {p}"
+            return f"Successfully wrote to {p}. If you are finished, output TASK_COMPLETE."
         except Exception as e:
             return f"Error writing to file {path}: {e}"
 
