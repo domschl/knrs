@@ -605,7 +605,11 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
                 break
         else:
             # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
-            nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
+            if any(word in msg.lower() for word in ["finished", "completed", "done", "synthesis", "synthesized", "wrote", "written"]):
+                nudge_msg = "[SYSTEM NUDGE]: It looks like you might be finished. If so, please output 'TASK_COMPLETE' to end the session. If not, you MUST execute a tool call using the JSON format."
+            else:
+                nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
+            
             if not auto:
                 resp = input("Agent is waiting. Reply (or press enter to let it continue): ")
                 if resp:

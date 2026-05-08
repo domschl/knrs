@@ -16,6 +16,7 @@ class ResearchAgent:
         self.client = LLMClient(model_name)
         self.tools = AgentTools(config)
         self.history = []
+        self.call_history = []
         
         self.history.append({"role": "system", "content": SYSTEM_PROMPT})
         
@@ -116,7 +117,7 @@ class ResearchAgent:
         tool_calls = self._extract_tool_call(response_text)
         
         # Only mark as done if there's no tool call to execute
-        is_done = "TASK_COMPLETE" in response_text and not tool_calls
+        is_done = ("TASK_COMPLETE" in response_text.upper() or "TASK COMPLETE" in response_text.upper()) and not tool_calls
         
         return is_done, response_text, tool_calls
         
@@ -127,6 +128,12 @@ class ResearchAgent:
         
         result = self.tools.dispatch(tool_name, args)
         
-        tool_msg = f"Tool result for {tool_name}:\n{result}"
+        # Check for repetition
+        warning = ""
+        if tool_call in self.call_history:
+            warning = "\n\n[SYSTEM WARNING]: You have called this tool with identical arguments before. Repeating actions will not change the results. Please refine your query, read a different file/range, or move on to synthesis if you have enough info."
+        self.call_history.append(tool_call)
+        
+        tool_msg = f"Tool result for {tool_name}:\n{result}{warning}"
         self.history.append({"role": "user", "content": tool_msg})
         return result
