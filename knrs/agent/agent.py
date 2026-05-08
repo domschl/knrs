@@ -63,17 +63,46 @@ class ResearchAgent:
         if calls:
             return calls
 
-        # Fallback to finding anything that looks like JSON
-        matches = re.finditer(r'(\{[\s\S]*?"tool"[\s\S]*?\})', text)
-        for match in matches:
-            try:
-                parsed = json.loads(match.group(1))
-                if "tool" in parsed and "args" in parsed:
-                    if parsed not in calls:
-                        calls.append(parsed)
-            except Exception:
-                pass
-                
+        # Fallback: scan for '{' and try to parse JSON by matching braces
+        start_idx = 0
+        while True:
+            start_idx = text.find('{', start_idx)
+            if start_idx == -1:
+                break
+            
+            brace_count = 0
+            in_string = False
+            escape = False
+            end_idx = -1
+            
+            for i in range(start_idx, len(text)):
+                c = text[i]
+                if escape:
+                    escape = False
+                elif c == '\\':
+                    escape = True
+                elif c == '"':
+                    in_string = not in_string
+                elif not in_string:
+                    if c == '{':
+                        brace_count += 1
+                    elif c == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i
+                            break
+                            
+            if end_idx != -1:
+                try:
+                    parsed = json.loads(text[start_idx:end_idx+1])
+                    if isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
+                        if parsed not in calls:
+                            calls.append(parsed)
+                except Exception:
+                    pass
+            
+            start_idx += 1
+            
         return calls
 
     def step(self) -> tuple[bool, str, list[dict]]:
