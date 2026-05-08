@@ -135,8 +135,12 @@ def plan_sync(
         icon_path = icon_root / f"{uuid}.jpg"
         has_legacy_icon = "icon" in mi["metadata"]
         
+        # Check if context is correct (to fix legacy files)
+        expected_context = f"AINotes/Books/{book.series_dir}"
+        context_mismatch = mi["metadata"].get("context") != expected_context
+
         # Also update if source_hash was missing from the frontmatter
-        if not mi["source_hash"] or meta_changed or not icon_path.exists() or has_legacy_icon:
+        if not mi["source_hash"] or meta_changed or context_mismatch or not icon_path.exists() or has_legacy_icon:
             actions.append(SyncAction(
                 action="UPDATE_METADATA", uuid=uuid, title=book.title,
                 old_path=mi["path"],
@@ -260,6 +264,7 @@ def _update_meta_fields(md_path: Path, book: CalibreBook, extra: dict | None = N
         "identifiers":      book.identifiers,
         "publisher":        book.publisher,
         "publication_date": book.publication_date,
+        "context":          f"AINotes/Books/{book.series_dir}",
         "description":      book.description,
     }
     if extra:
