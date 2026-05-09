@@ -111,7 +111,7 @@ class ResearchAgent:
         Run one step of the agent loop.
         Returns: (is_done, agent_message, tool_calls)
         """
-        response_text = self.client.generate(self.history, max_tokens=2500)
+        response_text = self.client.generate(self.history, max_tokens=10000)
         self.history.append({"role": "assistant", "content": response_text})
         
         tool_calls = self._extract_tool_call(response_text)

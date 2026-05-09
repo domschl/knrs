@@ -178,6 +178,29 @@ class AgentTools:
         except Exception as e:
             return f"Error writing to file {path}: {e}"
 
+    def file_append(self, path: str, content: str) -> str:
+        """Append content to a file in AINotes/Research/."""
+        try:
+            # Remove redundant AINotes/Research/ prefix if agent included it
+            if path.startswith("AINotes/Research/"):
+                path = path[len("AINotes/Research/"):]
+            
+            p = Path(path)
+            if not p.is_absolute():
+                p = self.research_root / p
+                
+            if not self._is_safe_write_path(p):
+                return f"Error: Cannot write outside {self.research_root}"
+                
+            if not p.exists():
+                return f"Error: File {path} does not exist. Use file_write for the initial write."
+                
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(content)
+            return f"Successfully appended to {p}. If you are finished, output TASK_COMPLETE."
+        except Exception as e:
+            return f"Error appending to file {path}: {e}"
+
     def create_directory(self, path: str) -> str:
         """Create a directory in AINotes/Research/."""
         try:
@@ -210,6 +233,8 @@ class AgentTools:
             return self.timeline_query(**args)
         elif tool_name == "file_write":
             return self.file_write(**args)
+        elif tool_name == "file_append":
+            return self.file_append(**args)
         elif tool_name == "create_directory":
             return self.create_directory(**args)
         else:
