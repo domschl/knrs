@@ -87,7 +87,7 @@ class AgentTools:
                     except Exception:
                         pass
                 
-                output.append(f"Result {i} (Score: {r.score:.3f})\nSource: {r.path}\nTitle: {title}\nContent snippet:\n{text[:1500]}...")
+                output.append(f"Result {i} (Score: {r.score:.3f})\nSource: {r.path}\nTitle: {title}\nContent snippet:\n{text}")
                 
             return "\n\n---\n\n".join(output)
         except Exception as e:
