@@ -16,7 +16,7 @@ On each run:
   5. Persist pruned state immediately (crash-safe baseline).
   6. Open a persistent EmbedderSession (model loads once).
   7. For each file to embed: chunk → session.embed() → extend arrays.
-  8. Save a checkpoint every checkpoint_every files.
+  8. Save a checkpoint every checkpoint_every_docs files or checkpoint_every_chunks chunks.
 
 Storage layout (VectorDB/):
   index.npy   — (N, D) float32 embedding matrix
@@ -182,7 +182,8 @@ class KnrsIndexer:
         wiki_dir: Path,
         *,
         force: bool = False,
-        checkpoint_every: int = 50,
+        checkpoint_every_docs: int | None = None,
+        checkpoint_every_chunks: int | None = None,
     ) -> None:
         """
         Differential index update with crash-safe checkpointing.
@@ -194,16 +195,19 @@ class KnrsIndexer:
         of dataset size.
 
         A checkpoint (index.npy + index.json) is written every
-        *checkpoint_every* files.  On restart the hash-diff step
-        automatically skips all files whose SHA-256 is already recorded,
-        so the run resumes exactly where it left off.
+        *checkpoint_every_docs* files or *checkpoint_every_chunks* chunks.
+        On restart the hash-diff step automatically skips all files whose
+        SHA-256 is already recorded, so the run resumes exactly where it left off.
 
         Args:
-            markdown_books_dir: KnrsData/MarkdownBooks root.
-            wiki_dir:           Wiki root (AINotes subtree is excluded).
-            force:              Discard all existing state and re-index everything.
-            checkpoint_every:   Number of files between disk checkpoints.
+            markdown_books_dir:      KnrsData/MarkdownBooks root.
+            wiki_dir:                Wiki root (AINotes subtree is excluded).
+            force:                   Discard all existing state and re-index everything.
+            checkpoint_every_docs:   Number of files between disk checkpoints.
+            checkpoint_every_chunks: Number of chunks between disk checkpoints.
         """
+        checkpoint_every_docs = checkpoint_every_docs or self.config.checkpoint_every_docs
+        checkpoint_every_chunks = checkpoint_every_chunks or self.config.checkpoint_every_chunks
         # ── 1. Load existing state ─────────────────────────────────────
         if force:
             logger.info("--force: discarding existing index state.")
@@ -414,9 +418,9 @@ class KnrsIndexer:
                         logger.error("Failed to process %s: %s", key, exc)
 
                     # ── Checkpoint every N files OR every M chunks ──────────
-                    if (file_num % checkpoint_every == 0 or 
+                    if (file_num % checkpoint_every_docs == 0 or 
                         file_num == total_files or 
-                        chunks_since_checkpoint >= 2000):
+                        chunks_since_checkpoint >= checkpoint_every_chunks):
                         
                         meta["model"] = self.config.embedder_name
                         self._save_state(embeddings, meta)
