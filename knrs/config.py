@@ -51,6 +51,8 @@ class KnrsConfig:
     calibre_library_name: str = "Calibre_Library"
     vector_chunk_size: int = 3000    # Chars. Approx 750 tokens. May require --ubatch-size 1024 on llama-server.
     vector_chunk_overlap: int = 600
+    checkpoint_every_docs: int = 50
+    checkpoint_every_chunks: int = 5000
     external_library: Path = field(default_factory=lambda: Path("~/MetaLibrary").expanduser().resolve())
 
     # ------------------------------------------------------------------ #
@@ -161,6 +163,14 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(vector_chunk_overlap, int):
         raise ValueError("Config key 'vector_chunk_overlap' must be an integer.")
 
+    checkpoint_every_docs = raw.get("checkpoint_every_docs", 50)
+    if not isinstance(checkpoint_every_docs, int):
+        raise ValueError("Config key 'checkpoint_every_docs' must be an integer.")
+
+    checkpoint_every_chunks = raw.get("checkpoint_every_chunks", 5000)
+    if not isinstance(checkpoint_every_chunks, int):
+        raise ValueError("Config key 'checkpoint_every_chunks' must be an integer.")
+
     cfg = KnrsConfig(
         calibre_path=resolve(raw["calibre_path"]),
         notes_path=resolve(raw["notes_path"]),
@@ -175,6 +185,8 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         external_library=resolve(external_library_raw),
         vector_chunk_size=vector_chunk_size,
         vector_chunk_overlap=vector_chunk_overlap,
+        checkpoint_every_docs=checkpoint_every_docs,
+        checkpoint_every_chunks=checkpoint_every_chunks,
     )
 
     logger.debug("Config loaded from %s", path)
@@ -217,6 +229,8 @@ def print_config(cfg: KnrsConfig) -> None:
         ("external_library", str(cfg.external_library)),
         ("vector_chunk_size", str(cfg.vector_chunk_size)),
         ("vector_chunk_overlap", str(cfg.vector_chunk_overlap)),
+        ("checkpoint_every_docs", str(cfg.checkpoint_every_docs)),
+        ("checkpoint_every_chunks", str(cfg.checkpoint_every_chunks)),
     ]
     for key, val in rows:
         table.add_row(key, val)

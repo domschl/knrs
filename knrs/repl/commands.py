@@ -61,7 +61,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row(r"/sync-external-lib \[--dry-run]", "Sync Calibre EPUB/PDF to External Library")
     table.add_row(r"/check-wiki \[--dry-run] \[--broken-links-to-italics] \[--force]", "Check and fix metadata consistency in Wiki")
     table.add_row(r"/timeline \[--force] \[--from YYYY-MM-DD] \[--to YYYY-MM-DD] \[--context PAT] \[--raw] \[keywords]", "Extract and filter timelines; supports date ranges, context, and keyword search")
-    table.add_row(r"/index \[--force] \[--checkpoint-every N]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything AND overrides git safety; default checkpoint: 50 files")
+    table.add_row(r"/index \[--force] \[--checkpoint-every-docs N] \[--checkpoint-every-chunks M]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything; default checkpoint: 50 files or 5000 chunks")
     table.add_row(r"/search <query> \[--raw] \[--highlight] \[--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
     table.add_row(r"/research <topic> \[--auto] \[--resume]", "Run autonomous research agent on the given topic. Shows plan first unless --auto is passed. Use --resume to continue the last session.")
     table.add_row("/research-list", "List past research sessions")
@@ -196,17 +196,29 @@ def cmd_index(args: list[str], cfg: KnrsConfig):
         console.print("[yellow]Use --force to override.[/yellow]")
         return
 
-    checkpoint_every = 50
-    if "--checkpoint-every" in args:
-        idx = args.index("--checkpoint-every")
+    checkpoint_every_docs = None
+    if "--checkpoint-every-docs" in args:
+        idx = args.index("--checkpoint-every-docs")
         try:
-            checkpoint_every = int(args[idx + 1])
+            checkpoint_every_docs = int(args[idx + 1])
         except (IndexError, ValueError):
-            console.print("[red]--checkpoint-every requires an integer argument[/red]")
+            console.print("[red]--checkpoint-every-docs requires an integer argument[/red]")
             return
+
+    checkpoint_every_chunks = None
+    if "--checkpoint-every-chunks" in args:
+        idx = args.index("--checkpoint-every-chunks")
+        try:
+            checkpoint_every_chunks = int(args[idx + 1])
+        except (IndexError, ValueError):
+            console.print("[red]--checkpoint-every-chunks requires an integer argument[/red]")
+            return
+
     KnrsIndexer(cfg).run_indexing(
         cfg.markdown_books, cfg.wiki_path,
-        force=force, checkpoint_every=checkpoint_every,
+        force=force, 
+        checkpoint_every_docs=checkpoint_every_docs,
+        checkpoint_every_chunks=checkpoint_every_chunks,
     )
 
 def cmd_search(args: list[str], cfg: KnrsConfig):
