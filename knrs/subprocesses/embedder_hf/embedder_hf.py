@@ -59,6 +59,16 @@ MODEL_NAME = "google/embeddinggemma-300m"
 ENCODE_BATCH_SIZE = 32
 
 
+def _get_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def _load_model() -> SentenceTransformer:
     # Attempt to find the model in the local HuggingFace cache to avoid 
     # the delay caused by checking for updates online (ETag requests).
@@ -72,8 +82,10 @@ def _load_model() -> SentenceTransformer:
         # Fallback to the original MODEL_NAME if not cached or on error.
         pass
 
+    device = _get_device()
+    logger.info("Using device: %s", device)
     logger.info("Loading SentenceTransformer model %s...", load_path)
-    model = SentenceTransformer(load_path, trust_remote_code=True)
+    model = SentenceTransformer(load_path, trust_remote_code=True, device=device)
     logger.info("Model loaded.")
     return model
 
@@ -101,15 +113,17 @@ def _embed(model: SentenceTransformer, input_path: Path, output_path: Path, mode
     # across server-mode calls, causing progressive OOM on large corpora.
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.empty_cache()
 
 
 def server_mode() -> None:
     """Persistent server: load model once, serve many batches."""
+    model = _load_model()
+
     # Suppress INFO-level noise during serving so it doesn't fight rich bars.
     logging.getLogger().setLevel(logging.WARNING)
     logger.setLevel(logging.WARNING)
-
-    model = _load_model()
     # Signal readiness to parent before entering the loop.
     print("READY", flush=True)
 
