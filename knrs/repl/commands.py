@@ -527,10 +527,9 @@ def cmd_set_param(args: list[str], cfg: KnrsConfig):
 
 def cmd_research(args: list[str], cfg: KnrsConfig):
     if not args:
-        console.print("[red]Usage: /research <topic> [--auto] [--resume][/red]")
+        console.print("[red]Usage: /research <topic> [--resume][/red]")
         return
         
-    auto = "--auto" in args
     resume = "--resume" in args
     
     # Filter out flags to get the topic
@@ -602,16 +601,6 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
                 
                 console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
                 
-                if not auto:
-                    choice = input("Execute tool? [Y/n/stop]: ").strip().lower()
-                    if choice == "n":
-                        feedback = input("Provide feedback to the agent instead: ")
-                        agent.history.append({"role": "user", "content": f"User rejected tool call {tool_name}. Feedback: {feedback}"})
-                        continue
-                    elif choice == "stop":
-                        console.print("[yellow]Stopping research session.[/yellow]")
-                        stop_session = True
-                        break
                         
                 console.print(f"[dim]Executing {tool_name}...[/dim]")
                 try:
