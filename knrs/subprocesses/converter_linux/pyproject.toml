@@ -9,5 +9,16 @@ dependencies = [
     "torch>=2.4.0",
 ]
 
+[project.optional-dependencies]
+xpu = ["torch"]
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-xpu", extra = "xpu" }]
+
 [project.scripts]
 converter-linux = "converter_linux:main"
