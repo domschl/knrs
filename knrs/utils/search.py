@@ -9,7 +9,7 @@ class SearchTools:
     """
 
     @staticmethod
-    def match(text: str, keys: list[str]) -> bool:
+    def match(text: str, keys: list[str], any_match: bool = False) -> bool:
         """
         Checks if the text matches the search keys.
         Keys support:
@@ -20,33 +20,36 @@ class SearchTools:
         - '*word': matches if text contains a word ending with 'word'
         - '*word*': matches if 'word' is a substring
         
-        All top-level keys in the list must match (AND logic).
+        By default, all top-level keys in the list must match (AND logic).
+        If any_match=True, only one positive key must match (OR logic).
+        Negative keys (!word) are always absolute exclusions.
         """
         if not keys:
             return True
             
         s_text = text.lower()
         
-        for key in keys:
-            if key.startswith("!"):
-                # Negative match
-                neg_key = key[1:].lower()
-                if SearchTools._check_single_key(s_text, neg_key):
-                    return False
-                continue
-            
-            # Positive match (OR logic within the key)
-            or_keys = key.split("|")
-            or_found = False
-            for or_key in or_keys:
-                if SearchTools._check_single_key(s_text, or_key.lower()):
-                    or_found = True
-                    break
-            
-            if not or_found:
+        positive_keys = [k for k in keys if not k.startswith("!")]
+        negative_keys = [k[1:] for k in keys if k.startswith("!")]
+        
+        # Absolute exclusions
+        for neg_key in negative_keys:
+            if SearchTools._check_single_key(s_text, neg_key.lower()):
                 return False
                 
-        return True
+        if not positive_keys:
+            return True
+            
+        matches = []
+        for key in positive_keys:
+            or_keys = key.split("|")
+            or_found = any(SearchTools._check_single_key(s_text, ok.lower()) for ok in or_keys)
+            matches.append(or_found)
+            
+        if any_match:
+            return any(matches)
+        else:
+            return all(matches)
 
     @staticmethod
     def _check_single_key(text: str, key: str) -> bool:

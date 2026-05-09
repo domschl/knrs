@@ -201,13 +201,13 @@ def query_timeline_data(
     for ev in events:
         # Context filter
         if context_filters:
-            if not SearchTools.match(ev.get("context", ""), context_filters):
+            if not SearchTools.match(ev.get("context", ""), context_filters, any_match=True):
                 continue
                 
         # Keyword filter
         if keywords:
             data_text = " ".join(str(v) for v in ev.values())
-            if not SearchTools.match(data_text, keywords):
+            if not SearchTools.match(data_text, keywords, any_match=True):
                 continue
         
         # Date filter logic
