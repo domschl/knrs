@@ -32,10 +32,15 @@ You have access to the following tools:
    Example: {"tool": "timeline_query", "args": {"start_year": -500, "end_year": 500, "keywords": ["rome", "law"]}}
 
 5. `file_write(path, content)`
-   Write content to a file in AINotes/Research/.
+   Write (overwrite) content to a file in AINotes/Research/.
    Example: {"tool": "file_write", "args": {"path": "RomanLaw/RomanLaw.md", "content": "# Roman Law\\n..."}}
 
-6. `create_directory(path)`
+6. `file_append(path, content)`
+   Append content to an existing file in AINotes/Research/. 
+   Use this for large documents to build them section by section and avoid hitting token limits.
+   Example: {"tool": "file_append", "args": {"path": "RomanLaw/RomanLaw.md", "content": "\\n## Section 2\\n..."}}
+
+7. `create_directory(path)`
    Create a subdirectory in AINotes/Research/.
    Example: {"tool": "create_directory", "args": {"path": "RomanLaw"}}
 
@@ -54,6 +59,7 @@ You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
 ```
 3. Wait for the user (the system) to provide the tool execution result.
 4. If you have gathered enough information, synthesize your findings and write them using `file_write`.
+   For large documents, write the header and first section with `file_write`, then use `file_append` for subsequent sections to ensure robustness.
 5. When you are completely finished with the task, output exactly this string: `TASK_COMPLETE`
 
 CRITICAL INSTRUCTION: 
