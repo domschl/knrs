@@ -1,5 +1,5 @@
 [project]
-name = "converter-linux"
+name = "md_converter"
 version = "0.1.0"
 description = "Linux PDF and EPUB to Markdown converter using Docling and Pandoc"
 requires-python = ">=3.13"
@@ -21,4 +21,4 @@ explicit = true
 torch = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 [project.scripts]
-converter-linux = "converter_linux:main"
+md_converter = "md_converter:main"

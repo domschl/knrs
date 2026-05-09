@@ -152,13 +152,9 @@ def atomic_write(dest: Path, content: str | bytes) -> None:
 # ─── Conversion dispatch ──────────────────────────────────────────────────────
 
 def _converter_script() -> Path:
-    """Resolve the platform-appropriate converter script path."""
+    """Resolve the unified md_converter script path."""
     base = Path(__file__).parent.parent / "subprocesses"
-    if sys.platform == "darwin":
-        script = base / "converter_macos" / "converter_macos.py"
-    else:
-        script = base / "converter_linux" / "converter_linux.py"
-    return script
+    return base / "md_converter" / "md_converter.py"
 
 
 def _converter_python(script: Path) -> str:

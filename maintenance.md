@@ -31,7 +31,7 @@ XPU:
  uv pip install torch --upgrade --index-url https://download.pytorch.org/whl/xpu
 ```
 
-now (for repos that already have an uv environment, e.g. embedder_hf):
+now (for repos that already have an uv environment, e.g. embedder_hf, md_converter):
 
 ```bash
 uv sync --extra xpu
