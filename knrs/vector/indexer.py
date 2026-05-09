@@ -331,6 +331,12 @@ class KnrsIndexer:
                         to_embed_with_counts.append((key, 0))
                     scanning.advance(scan_task)
 
+        total_chunks_indexed = len(meta["chunks"])
+        logger.info(
+            "Chunk progress: %d chunks already indexed, %d to embed (%d total).",
+            total_chunks_indexed, total_chunks, total_chunks_indexed + total_chunks,
+        )
+
         if total_chunks == 0:
             total_chunks = total_files  # Fallback for time estimation
 
