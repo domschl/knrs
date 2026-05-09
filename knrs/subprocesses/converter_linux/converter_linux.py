@@ -5,12 +5,15 @@ import argparse
 import logging
 import warnings
 import gc
+import torch
 from pypdf import PdfReader, PdfWriter
 from docling.datamodel.base_models import InputFormat
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.accelerator_options import AcceleratorOptions
 
 # Setup logging
+from rich.console import Console
 from rich.logging import RichHandler
 
 logging.basicConfig(
@@ -19,6 +22,7 @@ logging.basicConfig(
     datefmt="[%X]",
     handlers=[
         RichHandler(
+            console=Console(stderr=True),
             rich_tracebacks=True,
             show_path=False,
             markup=False,
@@ -26,6 +30,15 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("converter_linux")
+
+def _get_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 def convert(source_file: str, destination_file: str):
     sys.setrecursionlimit(10000)
@@ -89,10 +102,12 @@ def convert(source_file: str, destination_file: str):
                     writer.write(f_out)
                 
                 # Process chunk
+                accelerator_options = AcceleratorOptions(device=_get_device())
                 converter = DocumentConverter(
                     format_options={
                         InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
-                    }
+                    },
+                    accelerator_options=accelerator_options
                 )
                 try:
                     result = converter.convert(temp_pdf_path)
@@ -108,6 +123,10 @@ def convert(source_file: str, destination_file: str):
                         os.remove(temp_pdf_path)
                     del converter
                     gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    elif hasattr(torch, "xpu") and torch.xpu.is_available():
+                        torch.xpu.empty_cache()
 
             # Write combined result atomically
             temp_dest = destination_file + ".tmp"
@@ -149,6 +168,8 @@ def main():
     if not args.source or not args.destination:
         parser.error("source and destination are required unless --capabilities is passed")
 
+    device = _get_device()
+    logger.info("Using device: %s", device)
     convert(args.source, args.destination)
 
 if __name__ == "__main__":

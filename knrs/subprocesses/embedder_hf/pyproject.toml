@@ -7,6 +7,17 @@ dependencies = [
     "torch",
 ]
 
+[project.optional-dependencies]
+xpu = ["torch"]
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-xpu", extra = "xpu" }]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
