@@ -305,11 +305,39 @@ class KnrsIndexer:
             already_indexed, grand_total, total_files,
         )
 
+        # ── 6. Pre-calculate chunk counts for better progress estimation ──
+        to_embed_with_counts: list[tuple[str, int]] = []
+        total_chunks = 0
+        if to_embed:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                refresh_per_second=10,
+                transient=True,
+            ) as scanning:
+                scan_task = scanning.add_task("Pre-scanning chunks...", total=total_files)
+                for key in to_embed:
+                    path = current_files[key]
+                    try:
+                        content = path.read_text(encoding="utf-8")
+                        _, body = _split_frontmatter(content)
+                        c_count = len(self.chunk_text(body)) if len(body) >= 100 else 0
+                        to_embed_with_counts.append((key, c_count))
+                        total_chunks += c_count
+                    except Exception as exc:
+                        logger.error("Failed to count chunks for %s: %s", key, exc)
+                        to_embed_with_counts.append((key, 0))
+                    scanning.advance(scan_task)
+
+        if total_chunks == 0:
+            total_chunks = total_files  # Fallback for time estimation
+
         progress_columns = (
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            MofNCompleteColumn(),
             TaskProgressColumn(),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
@@ -323,25 +351,37 @@ class KnrsIndexer:
             with Progress(*progress_columns, refresh_per_second=4) as progress:
                 task = progress.add_task(
                     f"Indexing [{self.config.embedder_name}]",
-                    total=total_files,
+                    total=total_chunks,
                 )
 
-                for file_num, key in enumerate(to_embed, 1):
+                chunks_since_checkpoint = 0
+                for file_num, (key, c_count) in enumerate(to_embed_with_counts, 1):
                     path = current_files[key]
                     try:
                         content = path.read_text(encoding="utf-8")
                         _, body = _split_frontmatter(content)
                         chunks = self.chunk_text(body) if len(body) >= 100 else []
 
-                        if chunks:
-                            fname = Path(key).name
-                            fname = (fname[:37] + "…") if len(fname) > 38 else fname.ljust(38)
-                            progress.update(
-                                task,
-                                description=f"[{file_num:{len(str(total_files))}}/{total_files}] {fname}",
-                            )
-                            new_emb = session.embed(chunks, encode_mode="document")
+                        fname = Path(key).name
+                        fname = (fname[:37] + "…") if len(fname) > 38 else fname.ljust(38)
+                        progress.update(
+                            task,
+                            description=f"[{file_num:{len(str(total_files))}}/{total_files}] {fname}",
+                        )
 
+                        if chunks:
+                            # Process in batches for smoother progress updates on large files
+                            file_embs = []
+                            INTERNAL_BATCH = 1024
+                            for i in range(0, len(chunks), INTERNAL_BATCH):
+                                batch = chunks[i : i + INTERNAL_BATCH]
+                                batch_emb = session.embed(batch, encode_mode="document")
+                                file_embs.append(batch_emb)
+                                
+                                progress.advance(task, len(batch))
+                                chunks_since_checkpoint += len(batch)
+
+                            new_emb = np.concatenate(file_embs, axis=0)
                             if len(embeddings) == 0:
                                 embeddings = new_emb
                             else:
@@ -356,6 +396,10 @@ class KnrsIndexer:
                                     "text":        chunk[:200] + "...",
                                 })
                                 meta["full_texts"].append(chunk)
+                        else:
+                            # Empty file or too small, just advance by 1 if we are in fallback mode
+                            if total_chunks == total_files:
+                                progress.advance(task, 1)
 
                         if key in current_hashes:
                             meta["file_hashes"][key] = current_hashes[key]
@@ -363,20 +407,16 @@ class KnrsIndexer:
                     except Exception as exc:
                         logger.error("Failed to process %s: %s", key, exc)
 
-                    progress.advance(task, 1)
-
-                    # ── Checkpoint every N files ──────────────────────────
-                    if file_num % checkpoint_every == 0 or file_num == total_files:
+                    # ── Checkpoint every N files OR every M chunks ──────────
+                    if (file_num % checkpoint_every == 0 or 
+                        file_num == total_files or 
+                        chunks_since_checkpoint >= 2000):
+                        
                         meta["model"] = self.config.embedder_name
                         self._save_state(embeddings, meta)
+                        chunks_since_checkpoint = 0
+                        
                         pct = file_num * 100 // total_files if total_files else 100
-                        progress.update(
-                            task,
-                            description=(
-                                f"Checkpoint saved — "
-                                f"{file_num}/{total_files} files ({pct}%)"
-                            ),
-                        )
                         progress.console.log(
                             f"Checkpoint: {file_num}/{total_files} files "
                             f"({pct}%), {len(meta['chunks'])} total chunks."
