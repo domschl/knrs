@@ -36,6 +36,7 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
+from rich.console import Console
 from rich.logging import RichHandler
 
 logging.basicConfig(
@@ -44,6 +45,7 @@ logging.basicConfig(
     datefmt="[%X]",
     handlers=[
         RichHandler(
+            console=Console(stderr=True),
             rich_tracebacks=True,
             show_path=False,
             markup=False,
