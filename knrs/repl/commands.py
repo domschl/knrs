@@ -343,6 +343,17 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
         console.print("[red]Error: Index not found. Run /index first.[/red]")
 
 def cmd_sync(args: list[str], cfg: KnrsConfig):
+    force = "--force" in args
+    
+    if not force and not GIT_STATE["knrs_data_safe_remote"]:
+        console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date (remote check enabled).[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
+    if not force and not GIT_STATE["wiki_path_safe_remote"]:
+        console.print(f"[red]Safety check blocked: {cfg.wiki_path} is a git repo but not up-to-date (remote check enabled).[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
+
     console.print("[bold blue]Executing full sync pipeline...[/bold blue]")
     
     console.print("\n[bold cyan]1/7: Running /sync-calibre[/bold cyan]")
