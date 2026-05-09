@@ -66,8 +66,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Discard existing index and re-embed everything from scratch (also overrides git safety)."
     )
     index_p.add_argument(
-        "--checkpoint-every", type=int, default=50, metavar="N",
-        help="Save a checkpoint after every N files (default: 50)."
+        "--checkpoint-every-docs", type=int, metavar="N",
+        help="Save a checkpoint after every N files (default: from config)."
+    )
+    index_p.add_argument(
+        "--checkpoint-every-chunks", type=int, metavar="M",
+        help="Save a checkpoint after every M chunks (default: from config)."
     )
 
     # search
@@ -81,7 +85,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_p.add_argument("--dry-run", action="store_true")
     sync_p.add_argument("--force", action="store_true", help="Override git safety checks.")
     sync_p.add_argument("--concurrency", type=int, default=1)
-    sync_p.add_argument("--checkpoint-every", type=int, default=50, metavar="N")
+    sync_p.add_argument("--checkpoint-every-docs", type=int, metavar="N")
+    sync_p.add_argument("--checkpoint-every-chunks", type=int, metavar="M")
 
     # repl
     subparsers.add_parser("repl", help="Start the interactive REPL (default).")
@@ -189,7 +194,8 @@ def main() -> None:
             cfg.markdown_books,
             cfg.wiki_path,
             force=args.force,
-            checkpoint_every=args.checkpoint_every,
+            checkpoint_every_docs=args.checkpoint_every_docs,
+            checkpoint_every_chunks=args.checkpoint_every_chunks,
         )
         
     elif args.command == "search":
@@ -234,7 +240,10 @@ def main() -> None:
             mock_args.append("--dry-run")
         if args.force:
             mock_args.append("--force")
-        mock_args.extend(["--checkpoint-every", str(args.checkpoint_every)])
+        if args.checkpoint_every_docs:
+            mock_args.extend(["--checkpoint-every-docs", str(args.checkpoint_every_docs)])
+        if args.checkpoint_every_chunks:
+            mock_args.extend(["--checkpoint-every-chunks", str(args.checkpoint_every_chunks)])
         
         cmd_sync(mock_args, cfg)
 
