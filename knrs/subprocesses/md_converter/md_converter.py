@@ -78,6 +78,7 @@ def convert(source_file: str, destination_file: str):
             # Enable math formula translation to latex embedded in markdown
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_formula_enrichment = True
+            pipeline_options.accelerator_options = AcceleratorOptions(device=_get_device())
             
             reader = PdfReader(source_file)
             total_pages = len(reader.pages)
@@ -102,12 +103,10 @@ def convert(source_file: str, destination_file: str):
                     writer.write(f_out)
                 
                 # Process chunk
-                accelerator_options = AcceleratorOptions(device=_get_device())
                 converter = DocumentConverter(
                     format_options={
                         InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
-                    },
-                    accelerator_options=accelerator_options
+                    }
                 )
                 try:
                     result = converter.convert(temp_pdf_path)
