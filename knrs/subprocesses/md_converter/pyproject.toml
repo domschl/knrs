@@ -6,7 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "docling>=2.84.0",
     "pypdf>=6.9.2",
-    "torch>=2.4.0",
+    "torch>=2.10.0",
 ]
 
 
