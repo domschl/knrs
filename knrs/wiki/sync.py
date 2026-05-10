@@ -159,9 +159,11 @@ def plan_wiki_sync(
                     source_summary=si['path']
                 ))
             else:
-                # Simple update check (e.g. source is newer)
-                if target.stat().st_mtime < mi['path'].stat().st_mtime or \
-                   target.stat().st_mtime < si['path'].stat().st_mtime:
+                # Simple update check: use the actual filesystem path for stat()
+                # to avoid NFD/NFC mismatch on macOS (target is NFC, filesystem is NFD).
+                existing_mtime = existing_path.stat().st_mtime
+                if existing_mtime < mi['path'].stat().st_mtime or \
+                   existing_mtime < si['path'].stat().st_mtime:
                     actions.append(WikiAction(
                         action="UPDATE", uuid=uid, title=mi['title'],
                         target_path=target, source_book=mi['path'],
