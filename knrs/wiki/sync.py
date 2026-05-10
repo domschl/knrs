@@ -7,6 +7,7 @@ Also handles UUID injection for Wiki/Notes documents.
 from __future__ import annotations
 
 import logging
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,7 +67,6 @@ def inject_frontmatter_in_notes(notes_path: Path, wiki_path: Path) -> int:
 def update_wikilinks(wiki_path: Path, rename_map: dict[str, str], dry_run: bool = False) -> None:
     """Scan all .md files in wiki_path and update links according to rename_map."""
     import re
-    import unicodedata
     
     if not rename_map:
         return
@@ -148,7 +148,10 @@ def plan_wiki_sync(
             # it should have triggered a RECONVERT/RESUMMARISE.
             # We can check the target's mtime against sources.
             existing_path = existing_wiki_index[uid]
-            if target != existing_path:
+            norm_target = unicodedata.normalize("NFC", str(target))
+            norm_existing = unicodedata.normalize("NFC", str(existing_path))
+            
+            if norm_target != norm_existing:
                 # Rename/Move needed
                 actions.append(WikiAction(
                     action="UPDATE", uuid=uid, title=mi['title'],

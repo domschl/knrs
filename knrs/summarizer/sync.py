@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,8 +75,8 @@ def scan_existing_summaries(summaries_root: Path) -> dict[str, dict]:
         series_rel = str(md_path.parent.relative_to(summaries_root))
         index[uuid] = {
             "path":           md_path,
-            "filename":       md_path.name,
-            "series":         series_rel,
+            "filename":       unicodedata.normalize("NFC", md_path.name),
+            "series":         unicodedata.normalize("NFC", series_rel),
             "title":          meta.get("title", ""),
             "authors":        meta.get("authors", []),
             "source_md_hash": meta.get("source_md_hash", ""),
@@ -115,8 +116,8 @@ def scan_markdown_sources(
 
         index[uuid] = {
             "path":                     md_path,
-            "filename":                 md_path.name,
-            "series":                   series_rel,
+            "filename":                 unicodedata.normalize("NFC", md_path.name),
+            "series":                   unicodedata.normalize("NFC", series_rel),
             "title":                    title,
             "authors":                  authors,
             "first_author":             first,
