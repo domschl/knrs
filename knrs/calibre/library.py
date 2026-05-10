@@ -11,6 +11,7 @@ The old Summarizer project normalised series to lowercase; knrs does not.
 from __future__ import annotations
 
 import logging
+import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -279,8 +280,8 @@ def scan_existing_markdowns(markdown_root: Path) -> dict[str, dict]:
         series_rel = md_path.parent.relative_to(markdown_root)
         index[uuid] = {
             "path":        md_path,
-            "filename":    md_path.name,
-            "series":      str(series_rel),
+            "filename":    unicodedata.normalize("NFC", md_path.name),
+            "series":      unicodedata.normalize("NFC", str(series_rel)),
             "title":       meta.get("title", ""),
             "authors":     meta.get("authors", []),
             "source_hash": meta.get("source_hash", ""),

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import unicodedata
 from pathlib import Path
 
 from knrs.calibre.library import scan_calibre_library
@@ -36,7 +37,7 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
     logger.info("Scanning Calibre library at %s", cfg.calibre_path)
     calibre_index = scan_calibre_library(cfg.calibre_path, cfg.target_series)
     
-    valid_paths: set[Path] = set()
+    valid_paths: set[str] = set()
     actions = []
 
     for uuid, book in calibre_index.items():
@@ -49,8 +50,8 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
         target_name = f"{base_name}{ext}"
         target_path = cfg.external_library / book.series_dir / target_name
         
-        valid_paths.add(target_path)
-        valid_paths.add(target_path.parent)  # Ensure series dir is valid
+        valid_paths.add(unicodedata.normalize("NFC", str(target_path)))
+        valid_paths.add(unicodedata.normalize("NFC", str(target_path.parent)))  # Ensure series dir is valid
         
         if not target_path.exists():
             actions.append(("COPY", source_file, target_path))
@@ -61,7 +62,8 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
     for p in cfg.external_library.rglob("*"):
         if ".stfolder" in p.parts:
             continue
-        if p.is_file() and p not in valid_paths:
+        norm_p = unicodedata.normalize("NFC", str(p))
+        if p.is_file() and norm_p not in valid_paths:
             actions.append(("REMOVE_FILE", None, p))
 
     stats = {"COPY": 0, "UPDATE": 0, "REMOVE_FILE": 0, "REMOVE_DIR": 0}
