@@ -16,7 +16,7 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-xpu", extra = "xpu" }]
+torch = [{ index = "pytorch-xpu", marker = "extra == 'xpu'" }]
 
 [build-system]
 requires = ["hatchling"]
