@@ -4,19 +4,9 @@ version = "0.1.0"
 dependencies = [
     "sentence-transformers>=3.0.0",
     "numpy>=2.0.0",
-    "torch",
+    "torch>=2.10.0",
 ]
 
-[project.optional-dependencies]
-xpu = ["torch"]
-
-[[tool.uv.index]]
-name = "pytorch-xpu"
-url = "https://download.pytorch.org/whl/xpu"
-explicit = true
-
-[tool.uv.sources]
-torch = [{ index = "pytorch-xpu", marker = "extra == 'xpu'" }]
 
 [build-system]
 requires = ["hatchling"]
