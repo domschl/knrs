@@ -63,7 +63,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_row(r"/timeline \[--force] \[--from YYYY-MM-DD] \[--to YYYY-MM-DD] \[--context PAT] \[--raw] \[keywords]", "Extract and filter timelines; supports date ranges, context, and keyword search")
     table.add_row(r"/index \[--force] \[--checkpoint-every-docs N] \[--checkpoint-every-chunks M]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything; default checkpoint: 50 files or 5000 chunks")
     table.add_row(r"/search <query> \[--raw] \[--highlight] \[--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
-    table.add_row(r"/research <topic> \[--auto] \[--resume]", "Run autonomous research agent on the given topic. Shows plan first unless --auto is passed. Use --resume to continue the last session.")
+    table.add_row(r"/research <topic> \[--resume]", "Run research agent on the given topic. Use --resume to continue the last session.")
     table.add_row("/research-list", "List past research sessions")
     table.add_row("/config", "Show current configuration")
     table.add_row("/backends", "List available backends for the current platform")
@@ -601,7 +601,6 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
                 
                 console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
                 
-                        
                 console.print(f"[dim]Executing {tool_name}...[/dim]")
                 try:
                     result = agent.execute_tool(tool_call)
@@ -622,14 +621,7 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
             else:
                 nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
             
-            if not auto:
-                resp = input("Agent is waiting. Reply (or press enter to let it continue): ")
-                if resp:
-                    agent.history.append({"role": "user", "content": resp})
-                else:
-                    agent.history.append({"role": "user", "content": nudge_msg})
-            else:
-                agent.history.append({"role": "user", "content": nudge_msg})
+            agent.history.append({"role": "user", "content": nudge_msg})
                 
         step_count += 1
         
