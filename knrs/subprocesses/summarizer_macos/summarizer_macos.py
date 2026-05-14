@@ -189,10 +189,15 @@ def main():
         cap = {
             "name": "summarizer_macos",
             "type": "summarizer",
+            "config_file": "summarizer_config_macos.json",
             "platform": "macos",
             "validated_models": [DEFAULT_CONFIG["model_id"]],
             "available_models": [DEFAULT_CONFIG["model_id"]],
-            "parameters": ["chunk_size", "model_id", "model_name"]
+            "parameters": {
+                "chunk_size":  {"type": "int", "min": 1000, "max": 500000},
+                "model_id":    {"type": "str"},
+                "model_name":  {"type": "str"},
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)

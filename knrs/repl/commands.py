@@ -470,60 +470,127 @@ def cmd_set_backend(args: list[str], cfg: KnrsConfig):
 def cmd_set_param(args: list[str], cfg: KnrsConfig):
     if len(args) < 3:
         console.print("[red]Usage: /set-param <backend|global|llm-server> <key> <value>[/red]")
-        console.print("Example: /set-param summarizer_api model_name gemma-4-26b")
+        console.print("Example: /set-param agent_api default_max_tokens 8000")
         return
-        
+
     target, key = args[0], args[1]
     value_str = " ".join(args[2:])
-    
-    # Try to parse value as int/float/bool if possible
-    if value_str.lower() == "true": value = True
-    elif value_str.lower() == "false": value = False
-    else:
-        try:
-            if "." in value_str: value = float(value_str)
-            else: value = int(value_str)
-        except ValueError:
-            value = value_str
 
-    from knrs.config import update_knrs_config, update_platform_config
-    
+    # ── Type coercion ──────────────────────────────────────────────────────────
+    def coerce(val_str: str, type_hint: str | None = None) -> object:
+        """Parse value_str to the appropriate Python type."""
+        if val_str.lower() == "true":
+            return True
+        if val_str.lower() == "false":
+            return False
+        if type_hint == "int":
+            try:
+                return int(val_str)
+            except ValueError:
+                return val_str
+        if type_hint == "float":
+            try:
+                return float(val_str)
+            except ValueError:
+                return val_str
+        try:
+            if "." in val_str:
+                return float(val_str)
+            return int(val_str)
+        except ValueError:
+            return val_str
+
+    from knrs.config import update_knrs_config, update_platform_config, KNRS_CONFIG_FIELDS
+
+    # ── global: knrs.json ──────────────────────────────────────────────────────
     if target == "global":
+        if key not in KNRS_CONFIG_FIELDS:
+            console.print(f"[red]Invalid global config key: '{key}'[/red]")
+            console.print(f"Valid keys: {', '.join(sorted(KNRS_CONFIG_FIELDS))}")
+            return
+        value = coerce(value_str)
         if update_knrs_config(key, value):
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
-            console.print(f"[green]Successfully updated global config: {key} = {value}[/green]")
+            console.print(f"[green]Global config updated: {key} = {value!r}[/green]")
         else:
             console.print("[red]Failed to update global config[/red]")
-    elif target == "llm-server":
+        return
+
+    # ── llm-server: llm_server.json ────────────────────────────────────────────
+    if target == "llm-server":
+        LLM_SERVER_KEYS = {"url", "api_type", "api_key"}
+        if key not in LLM_SERVER_KEYS:
+            console.print(f"[red]Invalid llm-server key: '{key}'[/red]")
+            console.print(f"Valid keys: {', '.join(sorted(LLM_SERVER_KEYS))}")
+            return
+        value = coerce(value_str)
         if update_platform_config("llm_server.json", key, value):
-            console.print(f"[green]Successfully updated llm-server config: {key} = {value}[/green]")
+            console.print(f"[green]llm-server config updated: {key} = {value!r}[/green]")
         else:
             console.print("[red]Failed to update llm-server config[/red]")
-    else:
-        # Assume it's a backend name
-        mgr = _get_backend_manager()
-        cap = mgr.get_backend(target)
-        if not cap:
-            console.print(f"[red]Unknown target or backend: {target}[/red]")
-            return
-            
+        return
+
+    # ── backend config ─────────────────────────────────────────────────────────
+    mgr = _get_backend_manager()
+    cap = mgr.get_backend(target)
+    if not cap:
+        console.print(f"[red]Unknown target or backend: '{target}'[/red]")
+        console.print("Use /backends to see available backends.")
+        return
+
+    parameters = cap.get("parameters", {})
+    # Handle legacy list format gracefully
+    if isinstance(parameters, list):
+        parameters = {k: {"type": "str"} for k in parameters}
+
+    if parameters and key not in parameters:
+        console.print(f"[red]Invalid parameter '{key}' for backend '{target}'.[/red]")
+        writable = [k for k, v in parameters.items() if not v.get("read_only")]
+        console.print(f"Configurable parameters: {', '.join(writable) or '(none)'}")
+        return
+
+    param_meta = parameters.get(key, {})
+
+    # Block read-only params
+    if param_meta.get("read_only"):
+        console.print(f"[red]Parameter '{key}' is read-only (managed internally by the backend).[/red]")
+        return
+
+    # Coerce and range-check
+    type_hint = param_meta.get("type")
+    value = coerce(value_str, type_hint)
+    if type_hint == "int" and not isinstance(value, int):
+        console.print(f"[red]Parameter '{key}' expects an integer, got: {value_str!r}[/red]")
+        return
+    if type_hint == "float" and not isinstance(value, (int, float)):
+        console.print(f"[red]Parameter '{key}' expects a float, got: {value_str!r}[/red]")
+        return
+    if type_hint == "str" and not isinstance(value, str):
+        value = value_str  # Keep as string
+
+    min_val = param_meta.get("min")
+    max_val = param_meta.get("max")
+    if min_val is not None and value < min_val:
+        console.print(f"[red]Value {value} is below minimum {min_val} for '{key}'.[/red]")
+        return
+    if max_val is not None and value > max_val:
+        console.print(f"[red]Value {value} exceeds maximum {max_val} for '{key}'.[/red]")
+        return
+
+    # Determine config file — prefer the explicit config_file from capabilities
+    config_file = cap.get("config_file")
+    if not config_file:
+        # Fallback: infer from backend name (legacy backends without config_file)
         btype = cap.get("type", "unknown")
-        # Convention: platform configs are named like summarizer_config_api.json, or embedder_config_hf.json
-        # Wait, the naming convention isn't perfectly uniform.
-        # It's usually <type>_config_<suffix>.json. Let's just try to infer it.
-        # summarizer_api -> summarizer_config_api.json
-        # summarizer_macos -> summarizer_config_macos.json
         suffix = target.replace(btype + "_", "")
-        if not suffix or suffix == target:
-            filename = f"{btype}_config_{target}.json"
-        else:
-            filename = f"{btype}_config_{suffix}.json"
-            
-        if update_platform_config(filename, key, value):
-            console.print(f"[green]Successfully updated {filename}: {key} = {value}[/green]")
-        else:
-            console.print(f"[yellow]Attempted to update {filename} but it may not exist yet or failed.[/yellow]")
+        config_file = f"{btype}_config_{suffix}.json" if suffix != target else f"{btype}_config_{target}.json"
+
+    if update_platform_config(config_file, key, value):
+        console.print(f"[green]{config_file}: {key} = {value!r}[/green]")
+    else:
+        console.print(f"[red]Failed to update {config_file}[/red]")
+        console.print(f"[yellow]Tip: run the backend once to auto-create its config, or it will be created on next use.[/yellow]")
 
 def cmd_research(args: list[str], cfg: KnrsConfig):
     if not args:

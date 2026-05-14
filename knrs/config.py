@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from typing import Any
 
@@ -245,45 +245,65 @@ def print_config(cfg: KnrsConfig) -> None:
 
     rprint(Panel(table, title="[bold]knrs configuration[/bold]", expand=False))
 
+# Set of valid top-level keys for knrs.json, used by /set-param global validation.
+KNRS_CONFIG_FIELDS: frozenset[str] = frozenset(
+    f.name for f in dataclass_fields(KnrsConfig)
+)
+
+
 def update_knrs_config(key: str, value: Any, config_path: Path | None = None) -> bool:
     """Update a single key in knrs.json and save it."""
     path = config_path or knrs_config_file()
     if not path.exists():
         return False
-        
+
     try:
         with path.open("r", encoding="utf-8") as fh:
             raw = json.load(fh)
-            
+
         raw[key] = value
-        
+
         temp_path = path.with_suffix(".json.tmp")
         with temp_path.open("w", encoding="utf-8") as fh:
             json.dump(raw, fh, indent=4)
-        
+
         temp_path.replace(path)
         return True
     except Exception as e:
         logger.error("Failed to update knrs.json: %s", e)
         return False
 
-def update_platform_config(filename: str, key: str, value: Any) -> bool:
-    """Update a specific backend or shared config file in ~/.config/knrs/."""
+
+def update_platform_config(filename: str, key: str, value: Any, default_config: dict | None = None) -> bool:
+    """Update a single key in ~/.config/knrs/<filename>.
+
+    If the file does not exist and *default_config* is provided, the file is
+    created from the defaults before the key is written.  Without defaults
+    the function logs an error and returns False.
+    """
     path = knrs_config_file().parent / filename
-    if not path.exists():
-        logger.error("Config file not found: %s", path)
-        return False
-        
     try:
-        with path.open("r", encoding="utf-8") as fh:
-            raw = json.load(fh)
-            
+        if path.exists():
+            with path.open("r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        elif default_config is not None:
+            raw = default_config.copy()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info("Creating config file %s with defaults before update.", path)
+        else:
+            logger.error(
+                "Config file not found: %s — run the backend once to create it, "
+                "or use /set-param to create it.",
+                path,
+            )
+            return False
+
         raw[key] = value
-        
+
         temp_path = path.with_suffix(".json.tmp")
         with temp_path.open("w", encoding="utf-8") as fh:
             json.dump(raw, fh, indent=4)
-            
+
         temp_path.replace(path)
         return True
     except Exception as e:

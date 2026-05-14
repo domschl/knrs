@@ -188,15 +188,19 @@ def main():
             available_models = [m["id"] for m in data.get("data", [])]
         except Exception as e:
             logger.error(f"Failed to query {url}/v1/models: {e}")
-            sys.exit(1)
-            
+            available_models = []
+
         cap = {
             "name": "summarizer_api",
             "type": "summarizer",
+            "config_file": "summarizer_config_api.json",
             "platform": "any",
             "validated_models": ["gemma-4-26B-A4B-it-UD-Q4_K_XL", "gemma-4-31B-it-UD-Q4_K_XL"],
             "available_models": available_models,
-            "parameters": ["chunk_size", "model_name"]
+            "parameters": {
+                "chunk_size":  {"type": "int", "min": 1000, "max": 500000},
+                "model_name":  {"type": "str"},
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)

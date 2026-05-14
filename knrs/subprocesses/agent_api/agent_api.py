@@ -40,11 +40,26 @@ logger = logging.getLogger("agent_api")
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 from agent_core.protocol import read_request, write_response, write_error
-from summarizer_core.utils import get_platform_config, get_llm_server_config, watchdog
+from typing import TypedDict
 
-# Constants
-VERSION = "0.1.0"
-DEFAULT_LOCAL_CONFIG = {
+from summarizer_core.utils import get_platform_config, get_llm_server_config, watchdog, validate_config
+
+# ── Config schema ──────────────────────────────────────────────────────────────
+
+CONFIG_FILE = "agent_config_api.json"
+
+class AgentApiConfig(TypedDict):
+    model_name: str
+    default_max_tokens: int
+    default_temperature: float
+
+CONFIG_SCHEMA: dict[str, str] = {
+    "model_name": "str",
+    "default_max_tokens": "int",
+    "default_temperature": "float",
+}
+
+DEFAULT_LOCAL_CONFIG: AgentApiConfig = {
     "model_name": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
     "default_max_tokens": 10000,
     "default_temperature": 0.2,
@@ -159,19 +174,29 @@ def main():
             # Don't exit with error — capabilities should still work even if server is down
             # Just report empty available_models
 
-        local_cfg = get_platform_config("agent_config_api.json", DEFAULT_LOCAL_CONFIG)
+        local_cfg = get_platform_config(CONFIG_FILE, DEFAULT_LOCAL_CONFIG)
         cap = {
             "name": "agent_api",
             "type": "agent",
+            "config_file": CONFIG_FILE,
             "platform": "any",
             "validated_models": [DEFAULT_LOCAL_CONFIG["model_name"]],
             "available_models": available_models,
-            "parameters": ["model_name", "default_max_tokens", "default_temperature"],
+            "parameters": {
+                "model_name":          {"type": "str"},
+                "default_max_tokens":  {"type": "int",   "min": 100, "max": 128000},
+                "default_temperature": {"type": "float", "min": 0.0, "max": 2.0},
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)
 
-    local_cfg = get_platform_config("agent_config_api.json", DEFAULT_LOCAL_CONFIG)
+    local_cfg = get_platform_config(CONFIG_FILE, DEFAULT_LOCAL_CONFIG)
+    errors = validate_config(local_cfg, CONFIG_SCHEMA)
+    if errors:
+        for e in errors:
+            logger.error("Config error in %s: %s", CONFIG_FILE, e)
+        sys.exit(1)
     engine = ApiAgentEngine(server_config, local_cfg)
     run_persistent(engine)
 
