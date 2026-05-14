@@ -17,6 +17,7 @@ import threading
 
 # Setup logging (to stderr so stdout stays clean for protocol)
 from rich.logging import RichHandler
+from rich.console import Console
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,9 +28,9 @@ logging.basicConfig(
             rich_tracebacks=True,
             show_path=False,
             markup=False,
+            console=Console(stderr=True),
         )
     ],
-    stream=sys.stderr,
 )
 logger = logging.getLogger("agent_macos")
 
