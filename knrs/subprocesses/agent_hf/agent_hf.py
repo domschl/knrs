@@ -14,6 +14,10 @@ import signal
 import sys
 import logging
 import threading
+import os
+
+# Prevent fragmentation and XPU allocation crashes during model load
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 # Setup logging (to stderr so stdout stays clean for protocol)
 from rich.logging import RichHandler
@@ -52,6 +56,7 @@ for handler in logging.root.handlers:
 import warnings
 warnings.filterwarnings("ignore", message=".*The fast path is not available.*")
 warnings.filterwarnings("ignore", message=".*_check_is_size.*")
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 # Suppress KeyboardInterrupt globally
 signal.signal(signal.SIGINT, signal.SIG_DFL)
