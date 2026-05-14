@@ -1,0 +1,18 @@
+[project]
+name = "agent-api"
+version = "0.1.0"
+description = "OpenAI-compatible API agent backend (llama-server, vLLM, etc.)"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "rich",
+    "agent_core",
+    "summarizer_core",
+]
+
+[tool.uv.sources]
+agent_core = { path = "../agent_core", editable = true }
+summarizer_core = { path = "../summarizer_core", editable = true }
+
+[project.scripts]
+agent-api = "agent_api:main"

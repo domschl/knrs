@@ -4,16 +4,22 @@ import re
 from pathlib import Path
 
 from knrs.config import KnrsConfig
-from knrs.agent.llm_client import LLMClient
 from knrs.agent.tools import AgentTools
 from knrs.agent.prompts import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
 class ResearchAgent:
-    def __init__(self, config: KnrsConfig, model_name: str):
+    def __init__(self, config: KnrsConfig, session):
+        """Initialize the research agent.
+
+        Args:
+            config:  Resolved KnrsConfig.
+            session: An object with a generate(messages, max_tokens, temperature) method
+                     (typically an AgentSession from knrs.agent.engine).
+        """
         self.config = config
-        self.client = LLMClient(model_name)
+        self.session = session
         self.tools = AgentTools(config)
         self.history = []
         self.call_history = []
@@ -111,7 +117,7 @@ class ResearchAgent:
         Run one step of the agent loop.
         Returns: (is_done, agent_message, tool_calls)
         """
-        response_text = self.client.generate(self.history, max_tokens=10000)
+        response_text = self.session.generate(self.history, max_tokens=10000)
         self.history.append({"role": "assistant", "content": response_text})
         
         tool_calls = self._extract_tool_call(response_text)
