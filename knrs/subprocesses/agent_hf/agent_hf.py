@@ -137,13 +137,17 @@ class HFAgentEngine:
         logger.info(f"Loading model {model_id} (device={device}, dtype={dtype_str})...")
 
         if device == "xpu" and hasattr(torch, "xpu"):
-            # Monkey-patch mem_get_info to avoid transformers/accelerate crashes on Intel Arc
+            # Monkey-patch to avoid transformers/accelerate crashes on Intel Arc
+            # 1. Bypass mem_get_info crash during accelerate planning
             def fake_mem_get_info(*args, **kwargs):
-                # Return fake 16GB free, 16GB total to satisfy accelerate's caching_allocator_warmup
                 return (16 * 1024**3, 16 * 1024**3)
             torch.xpu.mem_get_info = fake_mem_get_info
             if hasattr(torch.xpu, "memory"):
                 torch.xpu.memory.mem_get_info = fake_mem_get_info
+                
+            # 2. Bypass XPU OOM crash during caching allocator warmup
+            import transformers.modeling_utils
+            transformers.modeling_utils.caching_allocator_warmup = lambda *args, **kwargs: None
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.model = AutoModelForCausalLM.from_pretrained(
