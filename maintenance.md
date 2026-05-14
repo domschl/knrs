@@ -1,8 +1,13 @@
 ## Submodules
 
-This project imports older projects with overlapping functionality as submodules for references.
+Inital installation of submodules:
+```bash
+./install.py
+```
 
-### First time
+### First time, only required to reference old code repositories
+
+Note: this is _only required for reference, the functionality of the current project is self-contained, and does not depend on the submodules.
 
 ```bash
 git submodule --init
