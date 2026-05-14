@@ -35,6 +35,32 @@ def has_torch_installed(cwd):
     except Exception:
         return False
 
+import json
+
+def wants_xpu(item_path):
+    """Check if the module's config file specifies 'xpu' as device."""
+    try:
+        script = item_path / f"{item_path.name}.py"
+        if not script.exists():
+            return False
+            
+        result = subprocess.run(
+            ["uv", "run", "python", str(script), "--capabilities"],
+            cwd=item_path, capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            cap = json.loads(result.stdout)
+            config_file = cap.get("config_file")
+            if config_file:
+                config_path = Path.home() / ".config" / "knrs" / config_file
+                if config_path.exists():
+                    with open(config_path, "r") as f:
+                        cfg = json.load(f)
+                        return cfg.get("device") == "xpu"
+    except Exception:
+        pass
+    return False
+
 def main():
     parser = argparse.ArgumentParser(description="knrs installation and update script.")
     parser.add_argument("--xpu", action="store_true", help="Install Intel XPU optimized torch versions.")
@@ -76,7 +102,8 @@ def main():
         run_command(["uv", "sync"], cwd=item)
 
         # 3. Handle XPU overlay
-        if args.xpu and has_torch_installed(item):
+        use_xpu = args.xpu or wants_xpu(item)
+        if use_xpu and has_torch_installed(item):
             print(f"Overlaying XPU-optimized torch for {item.name}...")
             run_command([
                 "uv", "pip", "install", "torch", "--upgrade", 

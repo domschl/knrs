@@ -60,8 +60,33 @@ MODEL_NAME = "google/embeddinggemma-300m"
 # Gemma3 that accumulated across server-mode encode() calls → OOM.
 ENCODE_BATCH_SIZE = 32
 
+DEFAULT_CONFIG = {
+    "device": "auto"
+}
 
-def _get_device() -> str:
+def get_platform_config():
+    config_file = os.path.expanduser("~/.config/knrs/embedder_config_hf.json")
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading platform config: {e}")
+
+    try:
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        with open(config_file, 'w') as f:
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to create default config at {config_file}: {e}")
+
+    return DEFAULT_CONFIG.copy()
+
+
+def _get_device(config_device: str = "auto") -> str:
+    if config_device and config_device != "auto":
+        return config_device
+
     if torch.cuda.is_available():
         return "cuda"
     if hasattr(torch, "xpu") and torch.xpu.is_available():
@@ -84,7 +109,8 @@ def _load_model() -> SentenceTransformer:
         # Fallback to the original MODEL_NAME if not cached or on error.
         pass
 
-    device = _get_device()
+    config = get_platform_config()
+    device = _get_device(config.get("device", "auto"))
     logger.info("Using device: %s", device)
     logger.info("Loading SentenceTransformer model %s...", load_path)
     model = SentenceTransformer(load_path, trust_remote_code=True, device=device)
@@ -158,11 +184,13 @@ def main() -> None:
         cap = {
             "name": "embedder_hf",
             "type": "embedder",
-            "config_file": None,
+            "config_file": "embedder_config_hf.json",
             "platform": "any",
             "validated_models": [MODEL_NAME],
             "available_models": [MODEL_NAME],
-            "parameters": {},
+            "parameters": {
+                "device": {"type": "str"}
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)
