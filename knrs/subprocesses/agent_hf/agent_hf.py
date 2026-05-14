@@ -42,10 +42,15 @@ class NoiseFilter(logging.Filter):
             return False
         if "HTTP Request" in msg and "200 OK" in msg:
             return False
+        if "The fast path is not available" in msg:
+            return False
         return True
 
 for handler in logging.root.handlers:
     handler.addFilter(NoiseFilter())
+
+import warnings
+warnings.filterwarnings("ignore", message=".*The fast path is not available.*")
 
 # Suppress KeyboardInterrupt globally
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -130,6 +135,15 @@ class HFAgentEngine:
             logger.info("4-bit quantization enabled via bitsandbytes.")
 
         logger.info(f"Loading model {model_id} (device={device}, dtype={dtype_str})...")
+
+        if device == "xpu" and hasattr(torch, "xpu"):
+            # Monkey-patch mem_get_info to avoid transformers/accelerate crashes on Intel Arc
+            def fake_mem_get_info(*args, **kwargs):
+                # Return fake 16GB free, 16GB total to satisfy accelerate's caching_allocator_warmup
+                return (16 * 1024**3, 16 * 1024**3)
+            torch.xpu.mem_get_info = fake_mem_get_info
+            if hasattr(torch.xpu, "memory"):
+                torch.xpu.memory.mem_get_info = fake_mem_get_info
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.model = AutoModelForCausalLM.from_pretrained(
