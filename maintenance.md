@@ -2,8 +2,10 @@
 
 Inital installation of submodules:
 ```bash
-./install.py
+./install.py [--xpu] [--help]
 ```
+
+Note: `--xpu` installs Intel XPU optimised torch versions of torch, for other hardware platforms, recognition of hw is automatic.
 
 ### First time, only required to reference old code repositories
 
