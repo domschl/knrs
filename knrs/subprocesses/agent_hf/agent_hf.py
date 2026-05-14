@@ -87,12 +87,25 @@ DEFAULT_CONFIG: AgentHfConfig = {
 
 
 class HFAgentEngine:
+    def _get_device(self, config_device: str = "auto") -> str:
+        import torch
+        if config_device and config_device != "auto":
+            return config_device
+
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return "xpu"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+
     def __init__(self, config: dict):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_id = config.get("model_id", DEFAULT_CONFIG["model_id"])
-        device = config.get("device", DEFAULT_CONFIG["device"])
+        device = self._get_device(config.get("device", DEFAULT_CONFIG["device"]))
         dtype_str = config.get("torch_dtype", DEFAULT_CONFIG["torch_dtype"])
 
         # Resolve torch dtype
@@ -162,6 +175,12 @@ class HFAgentEngine:
         # Decode only the new tokens (skip the input)
         new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
         response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+            torch.xpu.empty_cache()
+            
         return response.strip()
 
 
