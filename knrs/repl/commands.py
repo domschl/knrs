@@ -459,7 +459,7 @@ def cmd_set_backend(args: list[str], cfg: KnrsConfig):
         return
         
     from knrs.config import update_knrs_config
-    key = f"{btype}_name"
+    key = f"{btype}_backend_name" if btype == "agent" else f"{btype}_name"
     
     if update_knrs_config(key, bname):
         setattr(cfg, key, bname)
