@@ -51,6 +51,7 @@ for handler in logging.root.handlers:
 
 import warnings
 warnings.filterwarnings("ignore", message=".*The fast path is not available.*")
+warnings.filterwarnings("ignore", message=".*_check_is_size.*")
 
 # Suppress KeyboardInterrupt globally
 signal.signal(signal.SIGINT, signal.SIG_DFL)
