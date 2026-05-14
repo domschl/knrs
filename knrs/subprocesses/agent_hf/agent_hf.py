@@ -122,9 +122,10 @@ class HFAgentEngine:
         # Resolve torch dtype
         if dtype_str == "auto":
             torch_dtype = "auto"
-        elif hasattr(torch, dtype_str):
+        elif hasattr(torch, dtype_str) and isinstance(getattr(torch, dtype_str), torch.dtype):
             torch_dtype = getattr(torch, dtype_str)
         else:
+            logger.warning(f"Invalid torch_dtype '{dtype_str}' in config. Falling back to 'auto'.")
             torch_dtype = "auto"
 
         load_in_4bit = config.get("load_in_4bit", DEFAULT_CONFIG["load_in_4bit"])
