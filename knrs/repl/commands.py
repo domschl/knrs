@@ -403,7 +403,7 @@ def cmd_backends(args: list[str], cfg: KnrsConfig):
     table.add_column("Platform", style="green")
     table.add_column("Active", justify="center")
     
-    active_backends = [cfg.summarizer_name, cfg.embedder_name, cfg.agent_backend_name]
+    active_backends = [cfg.summarizer_name, cfg.embedder_name, cfg.agent_backend_name, "md_converter"]
     
     for name, cap in mgr.get_backends().items():
         is_active = "✓" if name in active_backends else ""
