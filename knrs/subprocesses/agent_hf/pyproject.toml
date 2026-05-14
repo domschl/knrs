@@ -7,6 +7,7 @@ dependencies = [
     "transformers>=4.50.0",
     "torch>=2.10.0",
     "accelerate",
+    "bitsandbytes>=0.43.0",
     "rich",
     "agent_core",
     "summarizer_core",
