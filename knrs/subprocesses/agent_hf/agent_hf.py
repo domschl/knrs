@@ -65,6 +65,7 @@ class AgentHfConfig(TypedDict):
     torch_dtype: str
     default_max_tokens: int
     default_temperature: float
+    load_in_4bit: bool
 
 CONFIG_SCHEMA: dict[str, str] = {
     "model_id": "str",
@@ -72,6 +73,7 @@ CONFIG_SCHEMA: dict[str, str] = {
     "torch_dtype": "str",
     "default_max_tokens": "int",
     "default_temperature": "float",
+    "load_in_4bit": "bool",
 }
 
 DEFAULT_CONFIG: AgentHfConfig = {
@@ -80,6 +82,7 @@ DEFAULT_CONFIG: AgentHfConfig = {
     "torch_dtype": "auto",
     "default_max_tokens": 10000,
     "default_temperature": 0.2,
+    "load_in_4bit": False,
 }
 
 
@@ -100,6 +103,19 @@ class HFAgentEngine:
         else:
             torch_dtype = "auto"
 
+        load_in_4bit = config.get("load_in_4bit", DEFAULT_CONFIG["load_in_4bit"])
+
+        quantization_config = None
+        if load_in_4bit:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch_dtype if torch_dtype != "auto" else torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            logger.info("4-bit quantization enabled via bitsandbytes.")
+
         logger.info(f"Loading model {model_id} (device={device}, dtype={dtype_str})...")
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -107,6 +123,7 @@ class HFAgentEngine:
             model_id,
             torch_dtype=torch_dtype,
             device_map=device,
+            quantization_config=quantization_config,
         )
         logger.info("Model loaded successfully.")
 
@@ -196,6 +213,7 @@ def main():
                 "torch_dtype":         {"type": "str"},
                 "default_max_tokens":  {"type": "int",   "min": 100, "max": 128000},
                 "default_temperature": {"type": "float", "min": 0.0, "max": 2.0},
+                "load_in_4bit":        {"type": "bool"},
             },
         }
         print(json.dumps(cap))
