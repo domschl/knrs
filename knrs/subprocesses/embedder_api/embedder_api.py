@@ -125,15 +125,19 @@ def main():
             available_models = [m["id"] for m in data.get("data", [])]
         except Exception as e:
             logger.error(f"Failed to query {url}/v1/models: {e}")
-            sys.exit(1)
+            available_models = []
 
         cap = {
             "name": "embedder_api",
             "type": "embedder",
+            "config_file": "embedder_config_api.json",
             "platform": "any",
             "validated_models": ["embeddinggemma-300M-Q8_0"],
             "available_models": available_models,
-            "parameters": ["model_name", "batch_size"]
+            "parameters": {
+                "model_name": {"type": "str"},
+                "batch_size":  {"type": "int", "min": 1, "max": 512},
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)

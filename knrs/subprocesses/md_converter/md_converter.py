@@ -156,10 +156,11 @@ def main():
         cap = {
             "name": "md_converter",
             "type": "converter",
+            "config_file": None,
             "platform": "any",
             "validated_models": ["pandoc", "docling"],
             "available_models": ["pandoc", "docling"],
-            "parameters": []
+            "parameters": {},
         }
         print(json.dumps(cap))
         sys.exit(0)

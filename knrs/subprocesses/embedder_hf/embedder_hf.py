@@ -158,10 +158,11 @@ def main() -> None:
         cap = {
             "name": "embedder_hf",
             "type": "embedder",
+            "config_file": None,
             "platform": "any",
             "validated_models": [MODEL_NAME],
             "available_models": [MODEL_NAME],
-            "parameters": ["model_name"]
+            "parameters": {},
         }
         print(json.dumps(cap))
         sys.exit(0)
