@@ -403,7 +403,7 @@ def cmd_backends(args: list[str], cfg: KnrsConfig):
     table.add_column("Platform", style="green")
     table.add_column("Active", justify="center")
     
-    active_backends = [cfg.summarizer_name, cfg.embedder_name]
+    active_backends = [cfg.summarizer_name, cfg.embedder_name, cfg.agent_backend_name]
     
     for name, cap in mgr.get_backends().items():
         is_active = "✓" if name in active_backends else ""
@@ -541,10 +541,8 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
     topic = " ".join(topic_parts)
     
     from knrs.agent.agent import ResearchAgent
+    from knrs.agent.engine import AgentSession
     from pathlib import Path
-    
-    # Get model choice from global config or fallback
-    model_name = getattr(cfg, "agent_model", "gemma-4-26B-A4B-it-UD-Q4_K_XL")
     
     # Checkpoint path
     safe_topic = "".join(c for c in topic if c.isalnum() or c in (" ", "-", "_")).strip()
@@ -552,81 +550,87 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
         safe_topic = "ResumeSession"
     ckpt_path = cfg.wiki_path / "AINotes" / "Research" / ".checkpoints" / f"{safe_topic}.json"
     
-    agent = ResearchAgent(cfg, model_name)
-    
-    if resume:
-        if ckpt_path.exists():
-            agent.load_checkpoint(ckpt_path)
-            console.print(f"[green]Resumed session from {ckpt_path.name}[/green]")
-            # If we don't have a new topic, just use what we have in history.
-            if topic:
-                agent.history.append({"role": "user", "content": f"New instruction: {topic}"})
-        else:
-            console.print(f"[red]No checkpoint found for topic '{topic}' to resume from.[/red]")
-            return
-    else:
-        # Initial prompt
-        init_prompt = f"Please research the following topic: '{topic}'.\n\nDevelop a plan and use the available tools to find relevant information. Then synthesize your findings into a comprehensive research document."
-        agent.history.append({"role": "user", "content": init_prompt})
-        
-    # Execute loop
-    step_count = 0
-    max_steps = 30
-    
-    while step_count < max_steps:
-        console.print(f"[dim]Agent thinking (Step {step_count+1})...[/dim]")
-        
-        try:
-            is_done, msg, tool_calls = agent.step()
-        except Exception as e:
-            console.print(f"[red]Agent Error: {e}[/red]")
-            break
+    try:
+        with AgentSession(cfg) as session:
+            agent = ResearchAgent(cfg, session)
             
-        agent.save_checkpoint(ckpt_path)
-        
-        # Display the agent's thought/message (strip out the JSON block for cleaner output if desired, or show it)
-        # We'll just show it via markdown
-        from rich.markdown import Markdown
-        console.print(Markdown(msg))
-        
-        if is_done:
-            console.print("[bold green]Research Task Complete![/bold green]")
-            break
-            
-        if tool_calls:
-            stop_session = False
-            for tool_call in tool_calls:
-                tool_name = tool_call.get("tool")
-                tool_args = tool_call.get("args", {})
-                
-                console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
-                
-                console.print(f"[dim]Executing {tool_name}...[/dim]")
-                try:
-                    result = agent.execute_tool(tool_call)
-                    # print a short preview of the result
-                    preview = result[:200].replace("\n", " ") + "..." if len(result) > 200 else result
-                    console.print(f"[dim]Tool result preview: {preview}[/dim]")
-                except Exception as e:
-                    console.print(f"[red]Tool execution error: {e}[/red]")
-                    agent.history.append({"role": "user", "content": f"Tool execution failed with error: {e}"})
-                    
-            agent.save_checkpoint(ckpt_path)
-            if stop_session:
-                break
-        else:
-            # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
-            if any(word in msg.lower() for word in ["finished", "completed", "done", "synthesis", "synthesized", "wrote", "written"]):
-                nudge_msg = "[SYSTEM NUDGE]: It looks like you might be finished. If so, please output 'TASK_COMPLETE' to end the session. If not, you MUST execute a tool call using the JSON format."
+            if resume:
+                if ckpt_path.exists():
+                    agent.load_checkpoint(ckpt_path)
+                    console.print(f"[green]Resumed session from {ckpt_path.name}[/green]")
+                    # If we don't have a new topic, just use what we have in history.
+                    if topic:
+                        agent.history.append({"role": "user", "content": f"New instruction: {topic}"})
+                else:
+                    console.print(f"[red]No checkpoint found for topic '{topic}' to resume from.[/red]")
+                    return
             else:
-                nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
-            
-            agent.history.append({"role": "user", "content": nudge_msg})
+                # Initial prompt
+                init_prompt = f"Please research the following topic: '{topic}'.\n\nDevelop a plan and use the available tools to find relevant information. Then synthesize your findings into a comprehensive research document."
+                agent.history.append({"role": "user", "content": init_prompt})
                 
-        step_count += 1
-        
-    if step_count >= max_steps:
-        console.print("[yellow]Agent reached maximum steps limit.[/yellow]")
+            # Execute loop
+            step_count = 0
+            max_steps = 30
+            
+            while step_count < max_steps:
+                console.print(f"[dim]Agent thinking (Step {step_count+1})...[/dim]")
+                
+                try:
+                    is_done, msg, tool_calls = agent.step()
+                except Exception as e:
+                    console.print(f"[red]Agent Error: {e}[/red]")
+                    break
+                    
+                agent.save_checkpoint(ckpt_path)
+                
+                # Display the agent's thought/message via markdown
+                from rich.markdown import Markdown
+                console.print(Markdown(msg))
+                
+                if is_done:
+                    console.print("[bold green]Research Task Complete![/bold green]")
+                    break
+                    
+                if tool_calls:
+                    stop_session = False
+                    for tool_call in tool_calls:
+                        tool_name = tool_call.get("tool")
+                        tool_args = tool_call.get("args", {})
+                        
+                        console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
+                        
+                        console.print(f"[dim]Executing {tool_name}...[/dim]")
+                        try:
+                            result = agent.execute_tool(tool_call)
+                            # print a short preview of the result
+                            preview = result[:200].replace("\n", " ") + "..." if len(result) > 200 else result
+                            console.print(f"[dim]Tool result preview: {preview}[/dim]")
+                        except Exception as e:
+                            console.print(f"[red]Tool execution error: {e}[/red]")
+                            agent.history.append({"role": "user", "content": f"Tool execution failed with error: {e}"})
+                            
+                    agent.save_checkpoint(ckpt_path)
+                    if stop_session:
+                        break
+                else:
+                    # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
+                    if any(word in msg.lower() for word in ["finished", "completed", "done", "synthesis", "synthesized", "wrote", "written"]):
+                        nudge_msg = "[SYSTEM NUDGE]: It looks like you might be finished. If so, please output 'TASK_COMPLETE' to end the session. If not, you MUST execute a tool call using the JSON format."
+                    else:
+                        nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
+                    
+                    agent.history.append({"role": "user", "content": nudge_msg})
+                        
+                step_count += 1
+                
+            if step_count >= max_steps:
+                console.print("[yellow]Agent reached maximum steps limit.[/yellow]")
+    except FileNotFoundError as e:
+        console.print(f"[red]Agent backend error: {e}[/red]")
+        console.print("[yellow]Check that the agent backend is installed. Use /backends to see available backends and /set-backend agent <name> to switch.[/yellow]")
+    except RuntimeError as e:
+        console.print(f"[red]Agent backend error: {e}[/red]")
 
 def cmd_research_list(args: list[str], cfg: KnrsConfig):
     research_dir = cfg.wiki_path / "AINotes" / "Research"
