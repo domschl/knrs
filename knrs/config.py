@@ -45,6 +45,7 @@ class KnrsConfig:
     wiki_path: Path
     vector_db_path: Path
     target_series: list[str] = field(default_factory=list)
+    auto_git_sync: bool = True
     summarizer_name: str = "summarizer_linux"
     embedder_name: str = "embedder_hf"
     agent_model: str = "gemma-4-26B-A4B-it-UD-Q4_K_XL"
@@ -135,6 +136,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(target_series, list):
         raise ValueError("Config key 'target_series' must be a list of strings.")
 
+    auto_git_sync = raw.get("auto_git_sync", True)
+    if not isinstance(auto_git_sync, bool):
+        raise ValueError("Config key 'auto_git_sync' must be a boolean.")
+
     summarizer_name = raw.get("summarizer_name", "summarizer_linux")
     if not isinstance(summarizer_name, str):
         raise ValueError("Config key 'summarizer_name' must be a string.")
@@ -178,6 +183,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         wiki_path=resolve(raw["wiki_path"]),
         vector_db_path=resolve(raw["vector_db_path"]),
         target_series=target_series,
+        auto_git_sync=auto_git_sync,
         summarizer_name=summarizer_name,
         embedder_name=embedder_name,
         agent_model=agent_model,
@@ -196,6 +202,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  wiki_path:       %s", cfg.wiki_path)
     logger.debug("  vector_db_path:  %s", cfg.vector_db_path)
     logger.debug("  target_series:   %s", cfg.target_series or "(all)")
+    logger.debug("  auto_git_sync:   %s", cfg.auto_git_sync)
     logger.debug("  summarizer_name: %s", cfg.summarizer_name)
     logger.debug("  embedder_name:   %s", cfg.embedder_name)
     logger.debug("  agent_model:     %s", cfg.agent_model)
@@ -222,6 +229,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("wiki_path", str(cfg.wiki_path)),
         ("vector_db_path", str(cfg.vector_db_path)),
         ("target_series", ", ".join(cfg.target_series) or "(all)"),
+        ("auto_git_sync", str(cfg.auto_git_sync)),
         ("summarizer_name", cfg.summarizer_name),
         ("embedder_name", cfg.embedder_name),
         ("agent_model", cfg.agent_model),
