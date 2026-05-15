@@ -744,7 +744,9 @@ def cmd_research(args: list[str], cfg: KnrsConfig) -> None:
             max_steps = 30
             
             while step_count < max_steps:
-                console.print(f"[dim]Agent thinking (Step {step_count+1})...[/dim]")
+                ctx_size = agent.get_context_size()
+                ctx_str = f"{ctx_size} chars" if ctx_size < 1024 else f"{ctx_size/1024:.1f} KB"
+                console.print(f"[dim]Agent thinking (Step {step_count+1}, Context: {ctx_str})...[/dim]")
                 
                 try:
                     is_done, msg, tool_calls = agent.step()
