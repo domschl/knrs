@@ -7,11 +7,15 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
 
 from knrs.config import KnrsConfig
+
+if TYPE_CHECKING:
+    from knrs.repl.backends import BackendManager
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -24,7 +28,7 @@ GIT_STATE = {
     "wiki_path_safe_remote": True,
 }
 
-def init_git_state(cfg: KnrsConfig):
+def init_git_state(cfg: KnrsConfig) -> None:
     if GIT_STATE["checked"]:
         return
     from knrs.paths import ensure_git_safety
@@ -60,7 +64,7 @@ def init_git_state(cfg: KnrsConfig):
 
     GIT_STATE["checked"] = True
 
-def cmd_help(args: list[str], cfg: KnrsConfig):
+def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     """Show available commands."""
     table = Table(title="Available Slash Commands")
     table.add_column("Command", style="cyan")
@@ -87,7 +91,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     
     console.print(table)
 
-def cmd_sync_calibre(args: list[str], cfg: KnrsConfig):
+def cmd_sync_calibre(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.calibre.sync import run_sync
     dry_run = "--dry-run" in args
     force = "--force" in args
@@ -97,7 +101,7 @@ def cmd_sync_calibre(args: list[str], cfg: KnrsConfig):
         return
     run_sync(cfg, dry_run=dry_run)
 
-def cmd_sync_summaries(args: list[str], cfg: KnrsConfig):
+def cmd_sync_summaries(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.summarizer.sync import run_summary_sync
     dry_run = "--dry-run" in args
     force = "--force" in args
@@ -107,7 +111,7 @@ def cmd_sync_summaries(args: list[str], cfg: KnrsConfig):
         return
     run_summary_sync(cfg, dry_run=dry_run)
 
-def cmd_sync_wiki(args: list[str], cfg: KnrsConfig):
+def cmd_sync_wiki(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.wiki.sync import run_wiki_sync, inject_frontmatter_in_notes
     force = "--force" in args
     if not force and not GIT_STATE["wiki_path_safe_local"]:
@@ -119,12 +123,12 @@ def cmd_sync_wiki(args: list[str], cfg: KnrsConfig):
     logger.info("Updated %d files.", count)
     run_wiki_sync(cfg)
 
-def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig):
+def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.external_lib.sync import run_external_sync
     dry_run = "--dry-run" in args
     run_external_sync(cfg, dry_run=dry_run)
 
-def cmd_wiki_check(args: list[str], cfg: KnrsConfig):
+def cmd_wiki_check(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.wiki.checker import run_wiki_check
     dry_run = "--dry-run" in args
     force = "--force" in args
@@ -135,7 +139,7 @@ def cmd_wiki_check(args: list[str], cfg: KnrsConfig):
     fix_broken_links = "--broken-links-to-italics" in args
     run_wiki_check(cfg, dry_run=dry_run, fix_broken_links=fix_broken_links)
 
-def cmd_timeline(args: list[str], cfg: KnrsConfig):
+def cmd_timeline(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.timelines.extractor import run_extraction
     from knrs.utils.search import SearchTools
     from knrs.timelines.indra_time import parse_point
@@ -196,7 +200,7 @@ def cmd_timeline(args: list[str], cfg: KnrsConfig):
             raw=raw
         )
 
-def cmd_index(args: list[str], cfg: KnrsConfig):
+def cmd_index(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.vector.indexer import KnrsIndexer
     force = "--force" in args
     
@@ -234,7 +238,7 @@ def cmd_index(args: list[str], cfg: KnrsConfig):
         checkpoint_every_chunks=checkpoint_every_chunks,
     )
 
-def cmd_search(args: list[str], cfg: KnrsConfig):
+def cmd_search(args: list[str], cfg: KnrsConfig) -> None:
     if not args:
         console.print("[red]Usage: /search <query> [--raw] [--highlight] [--summarize][/red]")
         return
@@ -355,7 +359,7 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
     except FileNotFoundError:
         console.print("[red]Error: Index not found. Run /index first.[/red]")
 
-def cmd_sync_git(args: list[str], cfg: KnrsConfig):
+def cmd_sync_git(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.paths import is_git_repo
     import subprocess
     
@@ -435,7 +439,7 @@ def cmd_sync_git(args: list[str], cfg: KnrsConfig):
         except subprocess.CalledProcessError as e:
             console.print(f"[red]Error executing git command in {name}: {e}[/red]")
 
-def cmd_sync(args: list[str], cfg: KnrsConfig):
+def cmd_sync(args: list[str], cfg: KnrsConfig) -> None:
     force = "--force" in args
     
     if not force and not GIT_STATE["knrs_data_safe_remote"]:
@@ -478,12 +482,12 @@ def cmd_sync(args: list[str], cfg: KnrsConfig):
     
     console.print("\n[bold green]Full sync pipeline completed![/bold green]")
 
-def cmd_config(args: list[str], cfg: KnrsConfig):
+def cmd_config(args: list[str], cfg: KnrsConfig) -> None:
     from knrs.config import print_config
     print_config(cfg)
 
 _backend_manager = None
-def _get_backend_manager():
+def _get_backend_manager() -> BackendManager:
     global _backend_manager
     if _backend_manager is None:
         from knrs.repl.backends import BackendManager
@@ -494,7 +498,7 @@ def _get_backend_manager():
         _backend_manager = BackendManager(resolve("~/Codeberg/knrs/knrs/subprocesses"))
     return _backend_manager
 
-def cmd_backends(args: list[str], cfg: KnrsConfig):
+def cmd_backends(args: list[str], cfg: KnrsConfig) -> None:
     mgr = _get_backend_manager()
     table = Table(title="Available Backends")
     table.add_column("Name", style="cyan")
@@ -510,7 +514,7 @@ def cmd_backends(args: list[str], cfg: KnrsConfig):
         
     console.print(table)
 
-def cmd_models(args: list[str], cfg: KnrsConfig):
+def cmd_models(args: list[str], cfg: KnrsConfig) -> None:
     if not args:
         console.print("[red]Usage: /models <backend_name>[/red]")
         return
@@ -539,7 +543,7 @@ def cmd_models(args: list[str], cfg: KnrsConfig):
         
     console.print(table)
 
-def cmd_set_backend(args: list[str], cfg: KnrsConfig):
+def cmd_set_backend(args: list[str], cfg: KnrsConfig) -> None:
     if len(args) != 2:
         console.print("[red]Usage: /set-backend <type> <backend_name>[/red]")
         console.print("Example: /set-backend summarizer summarizer_api")
@@ -566,7 +570,7 @@ def cmd_set_backend(args: list[str], cfg: KnrsConfig):
     else:
         console.print(f"[red]Failed to update configuration[/red]")
 
-def cmd_set_param(args: list[str], cfg: KnrsConfig):
+def cmd_set_param(args: list[str], cfg: KnrsConfig) -> None:
     if len(args) < 3:
         console.print("[red]Usage: /set-param <backend|global|llm-server> <key> <value>[/red]")
         console.print("Example: /set-param agent_api default_max_tokens 8000")
@@ -691,7 +695,7 @@ def cmd_set_param(args: list[str], cfg: KnrsConfig):
         console.print(f"[red]Failed to update {config_file}[/red]")
         console.print(f"[yellow]Tip: run the backend once to auto-create its config, or it will be created on next use.[/yellow]")
 
-def cmd_research(args: list[str], cfg: KnrsConfig):
+def cmd_research(args: list[str], cfg: KnrsConfig) -> None:
     if not args:
         console.print("[red]Usage: /research <topic> [--resume][/red]")
         return

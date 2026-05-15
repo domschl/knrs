@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 import argparse
@@ -5,6 +7,8 @@ import signal
 import logging
 import threading
 import hashlib
+from typing import Any, Dict, List, Optional, Union
+
 import requests
 
 # Setup logging
@@ -35,34 +39,35 @@ from summarizer_core.utils import get_platform_config, get_llm_server_config, wa
 
 # Constants
 VERSION = "0.1.0"
-DEFAULT_LOCAL_CONFIG = {
+DEFAULT_LOCAL_CONFIG: Dict[str, Any] = {
     "chunk_size": 200000,
     "model_name": "gemma-4-26B-A4B-it-UD-Q4_K_XL"
 }
 
 class ApiEngine(BaseEngine):
-    def __init__(self, server_cfg: dict, local_cfg: dict):
-        self.url = server_cfg["url"].rstrip("/")
-        self.api_key = server_cfg.get("api_key")
-        self.model = local_cfg["model_name"]
+    def __init__(self, server_cfg: Dict[str, Any], local_cfg: Dict[str, Any]) -> None:
+        self.url: str = server_cfg["url"].rstrip("/")
+        self.api_key: Optional[str] = server_cfg.get("api_key")
+        self.model: str = local_cfg["model_name"]
         logger.info(f"Using LLM Server at {self.url} (Model: {self.model})")
 
-    def format_prompt(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    def format_prompt(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
         # Return messages as-is for the chat API
         return messages
 
-    def generate(self, prompt: str | list, max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
-        headers = {"Content-Type": "application/json"}
+    def generate(self, prompt: Union[str, List[Dict[str, str]]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         
         # If prompt is still a string (not formatted by format_prompt), wrap it
+        messages: List[Dict[str, str]]
         if isinstance(prompt, str):
             messages = [{"role": "user", "content": prompt}]
         else:
             messages = prompt
 
-        payload = {
+        payload: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "max_tokens": max_tokens,
@@ -73,13 +78,13 @@ class ApiEngine(BaseEngine):
         try:
             response = requests.post(f"{self.url}/v1/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
-            data = response.json()
+            data: Dict[str, Any] = response.json()
             return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
             logger.error(f"API request failed: {e}")
             raise
 
-def summarize_file(source_file: str, destination_file: str, config: dict, server_config: dict, summary_max_tokens: int):
+def summarize_file(source_file: str, destination_file: str, config: Dict[str, Any], server_config: Dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Source file does not exist: {source_file}")
         sys.exit(1)
@@ -88,8 +93,8 @@ def summarize_file(source_file: str, destination_file: str, config: dict, server
         with open(source_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        chunk_size = config.get("chunk_size", DEFAULT_LOCAL_CONFIG["chunk_size"])
-        model_name = config.get("model_name", DEFAULT_LOCAL_CONFIG["model_name"])
+        chunk_size: int = config.get("chunk_size", DEFAULT_LOCAL_CONFIG["chunk_size"])
+        model_name: str = config.get("model_name", DEFAULT_LOCAL_CONFIG["model_name"])
         
         metadata, md_text = parse_markdown(content)
         source_md_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
@@ -100,7 +105,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, server
         engine = ApiEngine(server_config, config)
         summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash, final_sum_tokens=summary_max_tokens)
         
-        sum_metadata = {}
+        sum_metadata: Dict[str, Any] = {}
         if metadata:
             for key in ['title', 'authors', 'tags', 'uuid']:
                 if key in metadata:
@@ -128,7 +133,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, server
         logger.exception(f"Error during summarization: {e}")
         sys.exit(1)
 
-def answer_query(query: str, source_file: str, destination_file: str, config: dict, server_config: dict, summary_max_tokens: int):
+def answer_query(query: str, source_file: str, destination_file: str, config: Dict[str, Any], server_config: Dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Source file does not exist: {source_file}")
         sys.exit(1)
@@ -159,7 +164,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         logger.exception(f"Error during Q&A: {e}")
         sys.exit(1)
 
-def main():
+def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
@@ -174,13 +179,13 @@ def main():
     server_config = get_llm_server_config()
     
     if args.capabilities:
-        import json
-        url = server_config.get("url", "http://localhost:8180").rstrip("/")
-        api_key = server_config.get("api_key")
-        headers = {"Content-Type": "application/json"}
+        url: str = server_config.get("url", "http://localhost:8180").rstrip("/")
+        api_key: Optional[str] = server_config.get("api_key")
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         
+        available_models: List[str] = []
         try:
             response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
             response.raise_for_status()
@@ -188,9 +193,8 @@ def main():
             available_models = [m["id"] for m in data.get("data", [])]
         except Exception as e:
             logger.error(f"Failed to query {url}/v1/models: {e}")
-            available_models = []
 
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "summarizer_api",
             "type": "summarizer",
             "config_file": "summarizer_config_api.json",

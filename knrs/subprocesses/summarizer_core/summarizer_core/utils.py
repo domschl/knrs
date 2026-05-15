@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 import os
 import json
 import time
 import logging
-from typing import Any
+from typing import Any, Dict, List, Optional, Type
 
 logger = logging.getLogger("summarizer_core.utils")
 
 # ── Runtime config validation ──────────────────────────────────────────────────
 
-def validate_config(cfg: dict, schema: dict[str, str]) -> list[str]:
+def validate_config(cfg: Dict[str, Any], schema: Dict[str, str]) -> List[str]:
     """Validate a config dict against a simple type schema.
 
     Args:
@@ -19,8 +21,8 @@ def validate_config(cfg: dict, schema: dict[str, str]) -> list[str]:
     Returns:
         A list of error strings (empty = valid).
     """
-    errors: list[str] = []
-    type_map: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+    errors: List[str] = []
+    type_map: Dict[str, Type[Any]] = {"str": str, "int": int, "float": float, "bool": bool}
 
     for key, type_name in schema.items():
         if key not in cfg:
@@ -42,7 +44,7 @@ def validate_config(cfg: dict, schema: dict[str, str]) -> list[str]:
 
 # ── Platform config helpers ────────────────────────────────────────────────────
 
-def get_platform_config(config_name: str, default_config: dict = None) -> dict:
+def get_platform_config(config_name: str, default_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Load a backend config from ~/.config/knrs/<config_name>.
 
     If the file does not exist, it is created from *default_config*.
@@ -84,7 +86,7 @@ def get_platform_config(config_name: str, default_config: dict = None) -> dict:
     return default.copy()
 
 
-def update_platform_config(config_name: str, key: str, value: Any, default_config: dict = None) -> bool:
+def update_platform_config(config_name: str, key: str, value: Any, default_config: Optional[Dict[str, Any]] = None) -> bool:
     """Update a single key in ~/.config/knrs/<config_name>.
 
     If the file does not exist, it is created from *default_config* first.
@@ -95,7 +97,7 @@ def update_platform_config(config_name: str, key: str, value: Any, default_confi
     try:
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
-                raw = json.load(f)
+                raw: Dict[str, Any] = json.load(f)
         else:
             raw = (default_config or {}).copy()
             os.makedirs(os.path.dirname(config_file), exist_ok=True)
@@ -113,7 +115,7 @@ def update_platform_config(config_name: str, key: str, value: Any, default_confi
         return False
 
 
-def get_llm_server_config() -> dict:
+def get_llm_server_config() -> Dict[str, Any]:
     """Returns the shared LLM server configuration."""
     return get_platform_config("llm_server.json", {
         "url": "http://localhost:8180",
@@ -129,4 +131,3 @@ def watchdog() -> None:
             logger.warning("Parent process died. Exiting...")
             os._exit(1)
         time.sleep(2)
-

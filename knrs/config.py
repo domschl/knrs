@@ -1,21 +1,3 @@
-"""
-knrs.config — Load and validate ~/.config/knrs/knrs.json.
-
-Example config file:
-
-    {
-        "calibre_path":    "~/ReferenceLibrary/Calibre Library",
-        "notes_path":      "~/Wiki/Notes",
-        "knrs_data":       "~/KnrsData",
-        "wiki_path":       "~/Wiki",
-        "target_series":   [],
-        "summarizer_name": "summarizer_linux"
-    }
-
-Required keys: calibre_path, notes_path, knrs_data, wiki_path.
-Optional keys: target_series (default []), summarizer_name (default "summarizer_linux").
-"""
-
 from __future__ import annotations
 
 import json
@@ -23,7 +5,7 @@ import os
 import logging
 from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Set, Optional
 
 from knrs.paths import knrs_config_file, resolve
 
@@ -221,7 +203,7 @@ def print_config(cfg: KnrsConfig) -> None:
     table.add_column("Key", style="bold cyan")
     table.add_column("Value", style="white")
 
-    rows = [
+    rows: List[tuple[str, str]] = [
         ("calibre_path", str(cfg.calibre_path)),
         ("notes_path", str(cfg.notes_path)),
         ("knrs_data", str(cfg.knrs_data)),
@@ -258,7 +240,7 @@ def update_knrs_config(key: str, value: Any, config_path: Path | None = None) ->
 
     try:
         with path.open("r", encoding="utf-8") as fh:
-            raw = json.load(fh)
+            raw: dict[str, Any] = json.load(fh)
 
         raw[key] = value
 
@@ -273,7 +255,7 @@ def update_knrs_config(key: str, value: Any, config_path: Path | None = None) ->
         return False
 
 
-def update_platform_config(filename: str, key: str, value: Any, default_config: dict | None = None) -> bool:
+def update_platform_config(filename: str, key: str, value: Any, default_config: dict[str, Any] | None = None) -> bool:
     """Update a single key in ~/.config/knrs/<filename>.
 
     If the file does not exist and *default_config* is provided, the file is
@@ -284,7 +266,7 @@ def update_platform_config(filename: str, key: str, value: Any, default_config: 
     try:
         if path.exists():
             with path.open("r", encoding="utf-8") as fh:
-                raw = json.load(fh)
+                raw: dict[str, Any] = json.load(fh)
         elif default_config is not None:
             raw = default_config.copy()
             path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,24 +1,27 @@
+from __future__ import annotations
+
 import os
 import json
 import logging
 from datetime import datetime
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger("summarizer_core.cache")
 
 class WorkCache:
-    def __init__(self, cache_dir: str = "~/.cache/summarizer/work_cache"):
-        self.cache_dir = os.path.expanduser(cache_dir)
+    def __init__(self, cache_dir: str = "~/.cache/summarizer/work_cache") -> None:
+        self.cache_dir: str = os.path.expanduser(cache_dir)
         os.makedirs(self.cache_dir, exist_ok=True)
 
     def _get_path(self, doc_hash: str, chunk_size: int) -> str:
         return os.path.join(self.cache_dir, f"{doc_hash}_{chunk_size}.json")
 
-    def load_progress(self, doc_hash: str, chunk_size: int) -> tuple[list[str], int]:
+    def load_progress(self, doc_hash: str, chunk_size: int) -> Tuple[List[str], int]:
         path = self._get_path(doc_hash, chunk_size)
         if os.path.exists(path):
             try:
                 with open(path, 'r') as f:
-                    data = json.load(f)
+                    data: Dict[str, Any] = json.load(f)
                     last_updated = datetime.fromisoformat(data['last_updated'])
                     if (datetime.now() - last_updated).days < 14:
                         return data.get('chunk_summaries', []), data.get('next_index', 0)
@@ -29,9 +32,9 @@ class WorkCache:
                 logger.warning(f"Failed to load cache {path}: {e}")
         return [], 0
 
-    def save_progress(self, doc_hash: str, chunk_size: int, chunk_summaries: list[str], next_index: int, filepath: str):
+    def save_progress(self, doc_hash: str, chunk_size: int, chunk_summaries: List[str], next_index: int, filepath: str) -> None:
         path = self._get_path(doc_hash, chunk_size)
-        data = {
+        data: Dict[str, Any] = {
             "doc_hash": doc_hash,
             "chunk_size": chunk_size,
             "filepath": filepath,
@@ -47,7 +50,7 @@ class WorkCache:
         except Exception as e:
             logger.error(f"Failed to save work cache: {e}")
 
-    def clear_progress(self, doc_hash: str, chunk_size: int):
+    def clear_progress(self, doc_hash: str, chunk_size: int) -> None:
         path = self._get_path(doc_hash, chunk_size)
         if os.path.exists(path):
             try:
@@ -55,7 +58,7 @@ class WorkCache:
             except Exception as e:
                 logger.warning(f"Failed to remove cache entry: {e}")
                 
-    def clear_by_hash_only(self, doc_hash: str):
+    def clear_by_hash_only(self, doc_hash: str) -> None:
         try:
             for filename in os.listdir(self.cache_dir):
                 if filename.startswith(f"{doc_hash}_") and filename.endswith(".json"):
@@ -63,7 +66,7 @@ class WorkCache:
         except Exception as e:
             logger.warning(f"Failed to remove cache entries for hash {doc_hash}: {e}")
 
-    def cleanup_old_entries(self, max_age_days: int = 14):
+    def cleanup_old_entries(self, max_age_days: int = 14) -> None:
         now = datetime.now()
         count = 0
         try:
@@ -73,7 +76,7 @@ class WorkCache:
                 path = os.path.join(self.cache_dir, filename)
                 try:
                     with open(path, 'r') as f:
-                        data = json.load(f)
+                        data: Dict[str, Any] = json.load(f)
                         last_updated = datetime.fromisoformat(data['last_updated'])
                         if (now - last_updated).days >= max_age_days:
                             os.remove(path)
@@ -85,9 +88,9 @@ class WorkCache:
         except Exception as e:
             logger.error(f"Error during cache cleanup: {e}")
 
-    def get_all_active_caches(self) -> dict[str, dict]:
+    def get_all_active_caches(self) -> Dict[str, Dict[str, Any]]:
         """Returns a mapping of content_hash -> cache data for orchestrator check."""
-        active = {}
+        active: Dict[str, Dict[str, Any]] = {}
         try:
             for filename in os.listdir(self.cache_dir):
                 if not filename.endswith(".json"):
@@ -95,7 +98,7 @@ class WorkCache:
                 path = os.path.join(self.cache_dir, filename)
                 try:
                     with open(path, 'r') as f:
-                        data = json.load(f)
+                        data: Dict[str, Any] = json.load(f)
                         active[data['doc_hash']] = data
                 except Exception:
                     pass

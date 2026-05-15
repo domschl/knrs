@@ -1,17 +1,20 @@
+from __future__ import annotations
+
 import math
 import os
 import time
 import logging
-from typing import Optional
+from typing import List, Optional, Union
+
 from .engine import BaseEngine
 from .cache import WorkCache
 from .markdown import get_answer_from_output
 
 logger = logging.getLogger("summarizer_core.summarizer")
 
-def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_size: int, doc_hash: str, chunk_sum_size:int = 500, final_sum_tokens:int = 1500) -> str:
-    num_chunks = math.ceil(len(content) / chunk_size)
-    filename = os.path.basename(filepath)
+def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_size: int, doc_hash: str, chunk_sum_size: int = 500, final_sum_tokens: int = 1500) -> str:
+    num_chunks: int = math.ceil(len(content) / chunk_size)
+    filename: str = os.path.basename(filepath)
     
     if num_chunks == 0: 
         return ""
@@ -20,7 +23,7 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
         logger.info(f"Document '{filename}' fits in one chunk. Summarizing directly...")
         prompt_text = f"The following is the full text of '{filepath}'. Please provide a detailed summary:\n\n{content}"
         
-        prompt = prompt_text
+        prompt: Union[str, List[Dict[str, str]]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted:
@@ -39,36 +42,36 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
             logger.info(f"[{filename}] Resuming from chunk {start_index+1}/{num_chunks}...")
     else:
         logger.info(f"[{filename}] Starting summarization process, {num_chunks} chunks...")
- 
+  
     for i in range(start_index, num_chunks):
         start = i * chunk_size
         end = start + chunk_size
         chunk = content[start:end]
- 
+  
         if not chunk.strip():
             logger.info(f"Chunk {i+1} is empty or whitespace only, skipping.")
             cache.save_progress(doc_hash, chunk_size, chunk_summaries, i + 1, filepath)
             continue
- 
+  
         chunk_start = time.time()
         # logger.info(f"[{filename}] Summarizing chunk {i+1}/{num_chunks}...")
         
         prompt_text = f"Briefly summarize this part of document '{filepath}':\n\n{chunk}"
         
-        prompt = prompt_text
+        chunk_prompt: Union[str, List[Dict[str, str]]] = prompt_text
         if hasattr(engine, 'format_prompt'):
-            formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
-            if formatted:
-                prompt = formatted
+            formatted_chunk = engine.format_prompt([{"role": "user", "content": prompt_text}])
+            if formatted_chunk:
+                chunk_prompt = formatted_chunk
             
-        output = engine.generate(prompt, max_tokens=chunk_sum_size)
+        output = engine.generate(chunk_prompt, max_tokens=chunk_sum_size)
         duration = time.time() - chunk_start
         logger.info(f"[{filename}] Finished chunk {i+1}/{num_chunks} in {duration:.1f}s")
         
         extracted_output = get_answer_from_output(output)
         chunk_summaries.append(extracted_output)
         cache.save_progress(doc_hash, chunk_size, chunk_summaries, i + 1, filepath)
- 
+  
     logger.info(f"[{filename}] Consolidating final summary...")
     
     if not chunk_summaries:
@@ -80,11 +83,11 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
     
     final_prompt_text = f"The following are summaries of segments from '{filepath}'. Please combine them into a single coherent, detailed summary:\n\n{consolidated_text}"
     
-    final_prompt = final_prompt_text
+    final_prompt: Union[str, List[Dict[str, str]]] = final_prompt_text
     if hasattr(engine, 'format_prompt'):
-        formatted = engine.format_prompt([{"role": "user", "content": final_prompt_text}])
-        if formatted:
-            final_prompt = formatted
+        formatted_final = engine.format_prompt([{"role": "user", "content": final_prompt_text}])
+        if formatted_final:
+            final_prompt = formatted_final
         
     output = engine.generate(final_prompt, max_tokens=final_sum_tokens)
     final_summary = get_answer_from_output(output)

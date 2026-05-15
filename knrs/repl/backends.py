@@ -1,19 +1,22 @@
+from __future__ import annotations
+
 import os
 import sys
 import json
 import logging
 import subprocess
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 class BackendManager:
-    def __init__(self, subprocesses_dir: Path):
-        self.subprocesses_dir = subprocesses_dir
-        self.backends = {}
+    def __init__(self, subprocesses_dir: Path) -> None:
+        self.subprocesses_dir: Path = subprocesses_dir
+        self.backends: Dict[str, Dict[str, Any]] = {}
         self.discover()
 
-    def discover(self):
+    def discover(self) -> None:
         self.backends.clear()
         if not self.subprocesses_dir.exists():
             return
@@ -46,9 +49,9 @@ class BackendManager:
                 )
                 if result.returncode == 0:
                     try:
-                        cap = json.loads(result.stdout.strip())
+                        cap: Dict[str, Any] = json.loads(result.stdout.strip())
                         # Check platform compatibility
-                        plat = cap.get("platform", "any")
+                        plat: str = cap.get("platform", "any")
                         if plat == "any" or plat == os_name:
                             self.backends[entry.name] = cap
                     except json.JSONDecodeError as e:
@@ -56,10 +59,10 @@ class BackendManager:
             except Exception as e:
                 logger.debug("Failed to query capabilities for %s: %s", entry.name, e)
 
-    def get_backends(self, backend_type=None) -> dict:
+    def get_backends(self, backend_type: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         if backend_type:
             return {k: v for k, v in self.backends.items() if v.get("type") == backend_type}
         return self.backends
         
-    def get_backend(self, name: str) -> dict | None:
+    def get_backend(self, name: str) -> Optional[Dict[str, Any]]:
         return self.backends.get(name)

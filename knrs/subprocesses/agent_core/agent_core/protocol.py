@@ -1,25 +1,11 @@
-"""
-agent_core.protocol — JSON-line IPC helpers for persistent agent subprocesses.
-
-The parent process (knrs agent loop) communicates with the subprocess via
-stdin/stdout using one JSON object per line:
-
-    Request  (parent → subprocess stdin):
-        {"messages": [...], "max_tokens": 10000, "temperature": 0.2}
-
-    Response (subprocess → parent stdout):
-        {"text": "..."}
-
-    Error    (subprocess → parent stdout):
-        {"error": "description"}
-"""
+from __future__ import annotations
 
 import json
 import sys
-from typing import TextIO
+from typing import Any, Dict, List, Optional, TextIO
 
 
-def read_request(stream: TextIO = None) -> dict | None:
+def read_request(stream: Optional[TextIO] = None) -> Optional[Dict[str, Any]]:
     """Read one JSON-line request from stdin (or given stream).
 
     Returns None on EOF (parent closed stdin → time to exit).
@@ -32,7 +18,7 @@ def read_request(stream: TextIO = None) -> dict | None:
     return json.loads(line.strip())
 
 
-def write_response(text: str, stream: TextIO = None) -> None:
+def write_response(text: str, stream: Optional[TextIO] = None) -> None:
     """Write a successful response to stdout (or given stream)."""
     if stream is None:
         stream = sys.stdout
@@ -40,7 +26,7 @@ def write_response(text: str, stream: TextIO = None) -> None:
     stream.flush()
 
 
-def write_error(message: str, stream: TextIO = None) -> None:
+def write_error(message: str, stream: Optional[TextIO] = None) -> None:
     """Write an error response to stdout (or given stream)."""
     if stream is None:
         stream = sys.stdout
@@ -49,10 +35,10 @@ def write_error(message: str, stream: TextIO = None) -> None:
 
 
 def send_request(
-    messages: list[dict],
+    messages: List[Dict[str, str]],
     max_tokens: int = 10000,
     temperature: float = 0.2,
-    stream: TextIO = None,
+    stream: Optional[TextIO] = None,
 ) -> None:
     """Send a request to a subprocess's stdin (parent-side helper)."""
     if stream is None:
@@ -66,7 +52,7 @@ def send_request(
     stream.flush()
 
 
-def read_response(stream: TextIO = None) -> dict:
+def read_response(stream: Optional[TextIO] = None) -> Dict[str, Any]:
     """Read one JSON-line response from a subprocess's stdout (parent-side helper).
 
     Returns a dict with either {"text": "..."} or {"error": "..."}.

@@ -1,20 +1,23 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 from knrs.config import KnrsConfig
 
 logger = logging.getLogger(__name__)
 
 class AgentTools:
-    def __init__(self, config: KnrsConfig):
-        self.config = config
-        self.research_root = self.config.wiki_path / "AINotes" / "Research"
+    def __init__(self, config: KnrsConfig) -> None:
+        self.config: KnrsConfig = config
+        self.research_root: Path = self.config.wiki_path / "AINotes" / "Research"
         self.research_root.mkdir(parents=True, exist_ok=True)
         
     def _is_safe_read_path(self, path: Path) -> bool:
         """Check if a path is within the allowed read roots."""
-        roots = [
+        roots: List[Path] = [
             self.config.markdown_books,
             self.config.book_summaries,
             self.config.wiki_path
@@ -33,7 +36,7 @@ class AgentTools:
         except Exception:
             return False
             
-    def _resolve_read_path(self, path_str: str) -> Path | None:
+    def _resolve_read_path(self, path_str: str) -> Optional[Path]:
         """Resolve a string path (absolute, relative, or prefixed) to a safe Path object."""
         if path_str.startswith("books:"):
             return self.config.markdown_books / path_str.split(":", 1)[1]
@@ -64,25 +67,24 @@ class AgentTools:
             if not results:
                 return "No semantic search results found."
                 
-            output = []
+            output: List[str] = []
             for i, r in enumerate(results, 1):
                 text = get_context_aware_text(searcher, r)
                 title = "Unknown"
                 
                 # Try to get title
+                file_path: Optional[Path] = None
                 if r.source_label == "books":
                     file_path = self.config.markdown_books / r.bare_path
                 elif r.source_label == "wiki":
                     file_path = self.config.wiki_path / r.bare_path
-                else:
-                    file_path = None
                     
                 if file_path and file_path.exists():
                     try:
                         content = file_path.read_text(encoding="utf-8")
                         fm, _ = _split_frontmatter(content)
                         if fm:
-                            meta = yaml.safe_load(fm) or {}
+                            meta: Dict[str, Any] = yaml.safe_load(fm) or {}
                             title = meta.get("title", title)
                     except Exception:
                         pass
@@ -126,7 +128,7 @@ class AgentTools:
             if not self._is_safe_read_path(p):
                 return f"Error: Path is outside allowed read directories: {directory}"
                 
-            files = []
+            files: List[str] = []
             for item in p.iterdir():
                 if item.name.startswith("."): continue
                 type_str = "DIR" if item.is_dir() else "FILE"
@@ -220,7 +222,7 @@ class AgentTools:
         except Exception as e:
             return f"Error creating directory {path}: {e}"
 
-    def dispatch(self, tool_name: str, args: dict) -> str:
+    def dispatch(self, tool_name: str, args: dict[str, Any]) -> str:
         """Execute a tool dynamically."""
         logger.info(f"Agent tool call: {tool_name}({args})")
         if tool_name == "vector_search":

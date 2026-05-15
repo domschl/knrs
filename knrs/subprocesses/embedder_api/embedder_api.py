@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
 import sys
 import threading
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import requests
@@ -26,24 +29,24 @@ logger = logging.getLogger("embedder_api")
 from summarizer_core.utils import get_platform_config, get_llm_server_config, watchdog
 
 # Constants
-DEFAULT_LOCAL_CONFIG = {
+DEFAULT_LOCAL_CONFIG: Dict[str, Any] = {
     "model_name": "embeddinggemma-300M-Q8_0",
     "batch_size": 32
 }
 
-def _embed(url: str, api_key: str, model: str, input_path: Path, output_path: Path) -> None:
+def _embed(url: str, api_key: Optional[str], model: str, input_path: Path, output_path: Path) -> None:
     with input_path.open("r", encoding="utf-8") as f:
-        texts = json.load(f)
+        texts: List[str] = json.load(f)
     if not texts:
         np.save(str(output_path), np.array([], dtype=np.float32))
         return
 
-    headers = {"Content-Type": "application/json"}
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     
     # Use standard OpenAI-compatible embeddings endpoint
-    payload = {
+    payload: Dict[str, Any] = {
         "model": model,
         "input": texts
     }
@@ -51,8 +54,9 @@ def _embed(url: str, api_key: str, model: str, input_path: Path, output_path: Pa
     try:
         response = requests.post(f"{url}/v1/embeddings", json=payload, headers=headers)
         response.raise_for_status()
-        data = response.json()
+        data: Dict[str, Any] = response.json()
         
+        embeddings: List[List[float]]
         # OpenAI format: {"data": [{"embedding": [...], "index": 0}, ...]}
         if "data" in data:
             # Sort by index to ensure correct order
@@ -75,7 +79,7 @@ def _embed(url: str, api_key: str, model: str, input_path: Path, output_path: Pa
         logger.error(f"Embedding request failed: {e}")
         raise
 
-def server_mode(url: str, api_key: str, model: str) -> None:
+def server_mode(url: str, api_key: Optional[str], model: str) -> None:
     """Persistent server: handles requests via stdin/stdout."""
     # Suppress noise during serving
     logging.getLogger().setLevel(logging.WARNING)
@@ -103,19 +107,19 @@ def server_mode(url: str, api_key: str, model: str) -> None:
         except Exception as exc:
             print(f"ERROR: {exc}", flush=True)
 
-def main():
+def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
     server_cfg = get_llm_server_config()
     local_cfg = get_platform_config("embedder_config_api.json", DEFAULT_LOCAL_CONFIG)
     
-    url = server_cfg["url"].rstrip("/")
-    api_key = server_cfg.get("api_key")
-    model = local_cfg["model_name"]
+    url: str = server_cfg["url"].rstrip("/")
+    api_key: Optional[str] = server_cfg.get("api_key")
+    model: str = local_cfg["model_name"]
 
     if len(sys.argv) == 2 and sys.argv[1] == "--capabilities":
-        headers = {"Content-Type": "application/json"}
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         try:
@@ -127,7 +131,7 @@ def main():
             logger.error(f"Failed to query {url}/v1/models: {e}")
             available_models = []
 
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "embedder_api",
             "type": "embedder",
             "config_file": "embedder_config_api.json",

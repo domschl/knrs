@@ -1,19 +1,11 @@
-"""
-agent_macos — MLX agent backend for Apple Silicon.
-
-Persistent subprocess that loads a model via mlx-vlm once and
-serves multi-turn conversation requests via stdin/stdout JSON-line protocol.
-
-Usage:
-    python agent_macos.py                     # persistent mode (stdin/stdout)
-    python agent_macos.py --capabilities      # print capabilities JSON and exit
-"""
+from __future__ import annotations
 
 import json
 import signal
 import sys
 import logging
 import threading
+from typing import Any, Dict, List, Optional, TypedDict
 
 # Setup logging (to stderr so stdout stays clean for protocol)
 from rich.logging import RichHandler
@@ -36,7 +28,7 @@ logger = logging.getLogger("agent_macos")
 
 # Noise filter for external libraries
 class NoiseFilter(logging.Filter):
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if "AFC is enabled" in msg:
             return False
@@ -55,8 +47,6 @@ from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load_config
 
 from agent_core.protocol import read_request, write_response, write_error
-from typing import TypedDict
-
 from summarizer_core.utils import get_platform_config, watchdog, validate_config
 
 # ── Config schema ──────────────────────────────────────────────────────────────
@@ -70,7 +60,7 @@ class AgentMacosConfig(TypedDict):
     default_max_tokens: int
     default_temperature: float
 
-CONFIG_SCHEMA: dict[str, str] = {
+CONFIG_SCHEMA: Dict[str, str] = {
     "model_id": "str",
     "kv_bits": "float",
     "kv_quant_scheme": "str",
@@ -88,24 +78,24 @@ DEFAULT_CONFIG: AgentMacosConfig = {
 
 
 class MLXAgentEngine:
-    def __init__(self, config: dict):
-        model_id = config.get("model_id", DEFAULT_CONFIG["model_id"])
-        self.kv_bits = config.get("kv_bits", DEFAULT_CONFIG["kv_bits"])
-        self.kv_quant_scheme = config.get("kv_quant_scheme", DEFAULT_CONFIG["kv_quant_scheme"])
+    def __init__(self, config: Dict[str, Any]) -> None:
+        model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
+        self.kv_bits: float = config.get("kv_bits", DEFAULT_CONFIG["kv_bits"])
+        self.kv_quant_scheme: str = config.get("kv_quant_scheme", DEFAULT_CONFIG["kv_quant_scheme"])
 
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)
-        self.config = load_config(model_id)
+        self.config_data: Dict[str, Any] = load_config(model_id)
         logger.info("Model loaded successfully.")
 
     def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: List[Dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
         # Normalize role names
-        normalized = []
+        normalized: List[Dict[str, str]] = []
         for m in messages:
             role = m["role"]
             if role == "model":
@@ -113,9 +103,9 @@ class MLXAgentEngine:
             normalized.append({"role": role, "content": m["content"]})
 
         # Apply chat template to the full conversation
-        prompt = apply_chat_template(self.processor, self.config, normalized, num_images=0)
+        prompt: str = apply_chat_template(self.processor, self.config_data, normalized, num_images=0)
 
-        output = generate(
+        output: Any = generate(
             self.model,
             self.processor,
             prompt,
@@ -135,7 +125,7 @@ class MLXAgentEngine:
         return text.strip()
 
 
-def run_persistent(engine: MLXAgentEngine):
+def run_persistent(engine: MLXAgentEngine) -> None:
     """Main loop: read JSON requests from stdin, write responses to stdout."""
     sys.stdout.write("READY\n")
     sys.stdout.flush()
@@ -146,9 +136,9 @@ def run_persistent(engine: MLXAgentEngine):
             logger.info("Stdin closed, shutting down.")
             break
 
-        messages = req.get("messages", [])
-        max_tokens = req.get("max_tokens", 10000)
-        temperature = req.get("temperature", 0.2)
+        messages: List[Dict[str, str]] = req.get("messages", [])
+        max_tokens: int = req.get("max_tokens", 10000)
+        temperature: float = req.get("temperature", 0.2)
 
         try:
             text = engine.chat(messages, max_tokens, temperature)
@@ -158,7 +148,7 @@ def run_persistent(engine: MLXAgentEngine):
             write_error(str(e))
 
 
-def main():
+def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
@@ -170,7 +160,7 @@ def main():
 
     if args.capabilities:
         config = get_platform_config(CONFIG_FILE, DEFAULT_CONFIG)
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "agent_macos",
             "type": "agent",
             "config_file": CONFIG_FILE,
