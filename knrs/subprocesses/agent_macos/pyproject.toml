@@ -1,0 +1,18 @@
+[project]
+name = "agent-macos"
+version = "0.1.0"
+description = "MLX agent backend for Apple Silicon"
+requires-python = ">=3.13"
+dependencies = [
+    "mlx-vlm>=0.4.3",
+    "rich",
+    "agent_core",
+    "summarizer_core",
+]
+
+[tool.uv.sources]
+agent_core = { path = "../agent_core", editable = true }
+summarizer_core = { path = "../summarizer_core", editable = true }
+
+[project.scripts]
+agent-macos = "agent_macos:main"

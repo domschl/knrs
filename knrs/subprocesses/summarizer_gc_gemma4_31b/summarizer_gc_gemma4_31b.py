@@ -286,10 +286,16 @@ def main():
         cap = {
             "name": "summarizer_gc_gemma4_31b",
             "type": "summarizer",
+            "config_file": "summarizer_config_gc_gemma4_31b.json",
             "platform": "any",
             "validated_models": [DEFAULT_CONFIG["model_name"]],
             "available_models": [DEFAULT_CONFIG["model_name"]],
-            "parameters": ["chunk_size", "model_name", "api_key", "rate_blocked_until"]
+            "parameters": {
+                "chunk_size":         {"type": "int", "min": 1000, "max": 500000},
+                "model_name":         {"type": "str"},
+                "api_key":            {"type": "str"},
+                "rate_blocked_until": {"type": "str", "read_only": True},
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)

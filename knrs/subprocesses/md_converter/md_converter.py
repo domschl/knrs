@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import subprocess
 import argparse
 import logging
@@ -31,7 +32,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger("md_converter")
 
-def _get_device() -> str:
+DEFAULT_CONFIG = {
+    "device": "auto"
+}
+
+def get_platform_config():
+    config_file = os.path.expanduser("~/.config/knrs/converter_config_md_converter.json")
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading platform config: {e}")
+
+    try:
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        with open(config_file, 'w') as f:
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to create default config at {config_file}: {e}")
+
+    return DEFAULT_CONFIG.copy()
+
+def _get_device(config_device: str = "auto") -> str:
+    if config_device and config_device != "auto":
+        return config_device
+
     if torch.cuda.is_available():
         return "cuda"
     if hasattr(torch, "xpu") and torch.xpu.is_available():
@@ -78,7 +104,10 @@ def convert(source_file: str, destination_file: str):
             # Enable math formula translation to latex embedded in markdown
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_formula_enrichment = True
-            pipeline_options.accelerator_options = AcceleratorOptions(device=_get_device())
+            
+            config = get_platform_config()
+            device = _get_device(config.get("device", "auto"))
+            pipeline_options.accelerator_options = AcceleratorOptions(device=device)
             
             reader = PdfReader(source_file)
             total_pages = len(reader.pages)
@@ -156,10 +185,13 @@ def main():
         cap = {
             "name": "md_converter",
             "type": "converter",
+            "config_file": "converter_config_md_converter.json",
             "platform": "any",
             "validated_models": ["pandoc", "docling"],
             "available_models": ["pandoc", "docling"],
-            "parameters": []
+            "parameters": {
+                "device": {"type": "str"}
+            },
         }
         print(json.dumps(cap))
         sys.exit(0)
@@ -167,7 +199,8 @@ def main():
     if not args.source or not args.destination:
         parser.error("source and destination are required unless --capabilities is passed")
 
-    device = _get_device()
+    config = get_platform_config()
+    device = _get_device(config.get("device", "auto"))
     logger.info("Using device: %s", device)
     convert(args.source, args.destination)
 
