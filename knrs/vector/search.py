@@ -38,7 +38,7 @@ class SearchResult:
         """Return the path without the source prefix."""
         return self.path.split(":", 1)[1] if ":" in self.path else self.path
 
-def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
+def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> Tuple[str, int, int]:
     from knrs.calibre.converter import _split_frontmatter
     
     file_path: Optional[Path] = None
@@ -50,24 +50,26 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
         return result.text
         
     if file_path is None or not file_path.exists():
-        return result.text
+        return result.text, 0, 0
         
     try:
         content = file_path.read_text(encoding="utf-8")
         _, body = _split_frontmatter(content)
     except Exception as e:
         logger.error("Failed to read context for %s: %s", file_path, e)
-        return result.text
+        return result.text, 0, 0
         
     if searcher.metadata is None:
-        return result.text
+        return result.text, 0, 0
         
     chunk_size: int = searcher.metadata.get("chunk_size", 3000)
     overlap: int = searcher.metadata.get("overlap", 600)
     step = chunk_size - overlap
     
     if len(body) <= chunk_size:
-        return body
+        start_char_idx = content.find(body)
+        start_line = content[:start_char_idx].count('\n') + 1 if start_char_idx != -1 else 0
+        return body, start_line, start_line + body.count('\n')
         
     start = 0
     num_chunks = 0
@@ -104,7 +106,14 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
             
     import re
     result_text = extended_text[act_start:act_end].strip()
-    return re.sub(r'\n{3,}', '\n\n', result_text)
+    result_text = re.sub(r'\n{3,}', '\n\n', result_text)
+    start_char_idx = content.find(result_text)
+    if start_char_idx != -1:
+        start_line = content[:start_char_idx].count('\n') + 1
+        end_line = start_line + result_text.count('\n')
+    else:
+        start_line = end_line = 0
+    return result_text, start_line, end_line
 
 def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearcher, raw: bool = False, cutoff: float = 0.5, session: Optional[EmbedderSession] = None) -> str:
     context_length = 64

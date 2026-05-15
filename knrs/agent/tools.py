@@ -69,7 +69,7 @@ class AgentTools:
                 
             output: List[str] = []
             for i, r in enumerate(results, 1):
-                text = get_context_aware_text(searcher, r)
+                text, start_line, end_line = get_context_aware_text(searcher, r)
                 title = "Unknown"
                 
                 # Try to get title
@@ -89,7 +89,8 @@ class AgentTools:
                     except Exception:
                         pass
                 
-                output.append(f"Result {i} (Score: {r.score:.3f})\nSource: {r.path}\nTitle: {title}\nContent snippet:\n{text}")
+                line_info = f"Lines {start_line}-{end_line}" if start_line > 0 else "Unknown lines"
+                output.append(f"Result {i} (Score: {r.score:.3f})\nSource: {r.path}\nTitle: {title}\nLocation: {line_info}\nContent snippet:\n{text}")
                 
             return "\n\n---\n\n".join(output)
         except Exception as e:
