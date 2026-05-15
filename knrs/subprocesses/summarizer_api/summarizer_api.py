@@ -11,8 +11,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import requests
 
-# Setup logging
+# Setup logging (to stderr so stdout stays clean for protocol/capabilities)
 from rich.logging import RichHandler
+from rich.console import Console
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,6 +24,7 @@ logging.basicConfig(
             rich_tracebacks=True,
             show_path=False,
             markup=False,
+            console=Console(stderr=True),
         )
     ],
 )
@@ -206,6 +208,7 @@ def main() -> None:
                 "model_name":  {"type": "str"},
             },
         }
+        import json
         print(json.dumps(cap))
         sys.exit(0)
         

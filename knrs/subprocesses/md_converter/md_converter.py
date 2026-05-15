@@ -10,14 +10,7 @@ import warnings
 import gc
 from typing import Any, Dict, List, Optional
 
-import torch
-from pypdf import PdfReader, PdfWriter
-from docling.datamodel.base_models import InputFormat
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.datamodel.accelerator_options import AcceleratorOptions
-
-# Setup logging
+# Setup logging (to stderr so stdout stays clean for capabilities)
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -59,6 +52,7 @@ def get_platform_config() -> Dict[str, Any]:
     return DEFAULT_CONFIG.copy()
 
 def _get_device(config_device: str = "auto") -> str:
+    import torch
     if config_device and config_device != "auto":
         return config_device
 
@@ -71,6 +65,13 @@ def _get_device(config_device: str = "auto") -> str:
     return "cpu"
 
 def convert(source_file: str, destination_file: str) -> None:
+    import torch
+    from pypdf import PdfReader, PdfWriter
+    from docling.datamodel.base_models import InputFormat
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.datamodel.accelerator_options import AcceleratorOptions
+
     sys.setrecursionlimit(10000)
     
     if not os.path.exists(source_file):
