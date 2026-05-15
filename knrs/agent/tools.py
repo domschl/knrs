@@ -119,6 +119,87 @@ class AgentTools:
         except Exception as e:
             return f"Error reading file {path}: {e}"
 
+    def wikipedia_search(self, query: str) -> str:
+        """Search Wikipedia for an article title."""
+        try:
+            import urllib.request
+            import urllib.parse
+            import json
+            import re
+            
+            params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "utf8": "",
+                "format": "json"
+            }
+            url = "https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 (https://github.com/domschl/knrs) AgentBot"})
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                
+            search_results = data.get("query", {}).get("search", [])
+            if not search_results:
+                return f"No Wikipedia articles found for '{query}'."
+            
+            output = [f"Search results for '{query}':"]
+            for i, res in enumerate(search_results[:10], 1):
+                title = res["title"]
+                snippet = re.sub(r'<[^>]+>', '', res["snippet"]) # Remove HTML tags from snippet
+                output.append(f"{i}. {title} - {snippet}...")
+            return "\n".join(output)
+        except Exception as e:
+            return f"Error searching Wikipedia: {e}"
+
+    def wikipedia_fetch(self, title: str) -> str:
+        """Download a Wikipedia article in plain text and save it to AINotes/Research/Wikipedia/."""
+        try:
+            import urllib.request
+            import urllib.parse
+            import json
+            
+            params = {
+                "action": "query",
+                "prop": "extracts",
+                "explaintext": "1",
+                "titles": title,
+                "format": "json"
+            }
+            url = "https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 (https://github.com/domschl/knrs) AgentBot"})
+            
+            with urllib.request.urlopen(req, timeout=20) as response:
+                data = json.loads(response.read().decode('utf-8'))
+            
+            pages = data.get("query", {}).get("pages", {})
+            page = next(iter(pages.values()))
+            if "missing" in page:
+                return f"Error: Wikipedia article '{title}' not found."
+                
+            content = page.get("extract", "")
+            if not content:
+                return f"Error: No content found for '{title}'."
+                
+            # Save it to AINotes/Research/Wikipedia/
+            wiki_dir = self.research_root / "Wikipedia"
+            wiki_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Clean filename
+            safe_title = "".join([c if c.isalnum() or c in " -_" else "_" for c in title])
+            file_path = wiki_dir / f"{safe_title}.md"
+            
+            # Write frontmatter and content
+            from knrs.calibre.converter import atomic_write
+            md_content = f"---\ntitle: \"{title}\"\nsource: \"Wikipedia\"\n---\n\n# {title}\n\n{content}"
+            atomic_write(file_path, md_content)
+            
+            preview = content[:500] + "..." if len(content) > 500 else content
+            return f"Successfully downloaded '{title}' to {file_path.relative_to(self.config.wiki_path)}\n\nPreview:\n{preview}\n\nUse file_read with this path to read the full article."
+        except Exception as e:
+            return f"Error fetching Wikipedia article: {e}"
+
     def file_list(self, directory: str) -> str:
         """List files in a directory."""
         try:
@@ -277,5 +358,9 @@ class AgentTools:
             return self.create_directory(**args)
         elif tool_name == "file_move":
             return self.file_move(**args)
+        elif tool_name == "wikipedia_search":
+            return self.wikipedia_search(**args)
+        elif tool_name == "wikipedia_fetch":
+            return self.wikipedia_fetch(**args)
         else:
             return f"Error: Unknown tool {tool_name}"
