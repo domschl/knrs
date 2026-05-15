@@ -464,17 +464,17 @@ def cmd_sync(args: list[str], cfg: KnrsConfig) -> None:
     console.print(f"\n[bold cyan]3/{total_steps}: Running /sync-wiki[/bold cyan]")
     cmd_sync_wiki(args, cfg)
     
-    console.print(f"\n[bold cyan]4/{total_steps}: Running /timeline[/bold cyan]")
+    console.print(f"\n[bold cyan]4/{total_steps}: Running /check-wiki[/bold cyan]")
+    cmd_wiki_check(args, cfg)
+    
+    console.print(f"\n[bold cyan]5/{total_steps}: Running /timeline[/bold cyan]")
     cmd_timeline(args, cfg)
     
-    console.print(f"\n[bold cyan]5/{total_steps}: Running /index[/bold cyan]")
+    console.print(f"\n[bold cyan]6/{total_steps}: Running /index[/bold cyan]")
     cmd_index(args, cfg)
     
-    console.print(f"\n[bold cyan]6/{total_steps}: Running /sync-external-lib[/bold cyan]")
+    console.print(f"\n[bold cyan]7/{total_steps}: Running /sync-external-lib[/bold cyan]")
     cmd_sync_external_lib(args, cfg)
-    
-    console.print(f"\n[bold cyan]7/{total_steps}: Running /check-wiki[/bold cyan]")
-    cmd_wiki_check(args, cfg)
     
     if getattr(cfg, "auto_git_sync", True):
         console.print(f"\n[bold cyan]8/{total_steps}: Running /sync-git (auto_git_sync enabled)[/bold cyan]")

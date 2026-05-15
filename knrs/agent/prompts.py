@@ -86,15 +86,14 @@ Assistant: I need to find information about Roman Law. I will use the vector_sea
 ```
 
 OUTPUT FORMATTING RULES:
-- When writing research files, always include YAML frontmatter:
-  ```yaml
+- When writing research files, the VERY FIRST lines of the file MUST be the YAML frontmatter. Do NOT put any headers or text before the frontmatter. Do NOT wrap the frontmatter in markdown code blocks. The level-1 heading (`# Title`) must come AFTER the frontmatter. Example:
   ---
   title: "Topic Name"
   context: "AINotes/Research/TopicName"
   sources:
     - "books:Path/To/Source.md"
   ---
-  ```
+  # Topic Name
 - Always include inline citations in your text referencing the sources you used (e.g., "[1]" or "(Author, Title)").
 - IMPORTANT: If you use numbered citations like "[1]", you MUST append a `## References` section at the very end of your document mapping each number to its exact source path and title. Unresolved numeric citations are strictly forbidden.
 - If relevant, include timeline tables in your output. You can either use `timeline_query` or synthesize your own table from free text. The table MUST adhere to this format: `| Date | Description | Context |` where 'Date' is in IndraTime format (e.g., `-500` for 500 BC, `1200` for 1200 AD).
