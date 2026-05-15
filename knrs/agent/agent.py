@@ -65,9 +65,33 @@ class ResearchAgent:
             except Exception:
                 pass
 
-        if calls:
-            return calls
-
+        # Pre-process the text to escape unescaped quotes in any "content" fields
+        # This prevents the in_string state machine from breaking on raw quotes.
+        # Find all occurrences of "content": "..."
+        # We look for "content" followed by a colon and a quote. Then we match non-greedily
+        # up to the LAST quote before a closing brace or a comma.
+        # Since content is usually the last field, it often ends with "\n  }\n}"
+        def escape_content_quotes(text_to_clean: str) -> str:
+            # A robust regex that finds the content block
+            pattern = re.compile(r'("content"\s*:\s*")(.*?)("\s*\}(?:\s*\})?|\s*,)', re.DOTALL)
+            offset = 0
+            result = []
+            for match in pattern.finditer(text_to_clean):
+                result.append(text_to_clean[offset:match.start(2)])
+                
+                # Escape quotes inside the content group
+                inner = match.group(2)
+                # First unescape to avoid double escaping, then escape
+                inner = inner.replace('\\"', '"').replace('"', '\\"')
+                result.append(inner)
+                
+                result.append(match.group(3))
+                offset = match.end()
+            result.append(text_to_clean[offset:])
+            return "".join(result)
+            
+        text = escape_content_quotes(text)
+        
         # Look for code blocks first
         matches = re.finditer(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         for match in matches:
@@ -126,14 +150,32 @@ class ResearchAgent:
                             end_idx = i
                             break
                             
-            if end_idx != -1:
+            raw_json = "".join(cleaned_chars)
+            
+            parsed = None
+            for extra_braces in range(4):
+                attempt = raw_json + ("}" * extra_braces)
                 try:
-                    parsed = json.loads("".join(cleaned_chars))
-                    if isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
-                        if parsed not in calls:
-                            calls.append(parsed)
+                    parsed = json.loads(attempt)
+                    break
                 except Exception:
                     pass
+                    
+            # Fallback to YAML which is more forgiving with quotes and multiline
+            if not parsed:
+                import yaml
+                for extra_braces in range(4):
+                    attempt = raw_json + ("}" * extra_braces)
+                    try:
+                        parsed = yaml.safe_load(attempt)
+                        if isinstance(parsed, dict) and "tool" in parsed:
+                            break
+                    except Exception:
+                        parsed = None
+                        
+            if parsed and isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
+                if parsed not in calls:
+                    calls.append(parsed)
             
             start_idx += 1
             
