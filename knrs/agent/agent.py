@@ -132,14 +132,34 @@ class ResearchAgent:
         tool_name = tool_call.get("tool")
         args = tool_call.get("args", {})
         
-        result = self.tools.dispatch(tool_name, args)
-        
-        # Check for repetition
-        warning = ""
+        # Check for exact repetition
         if tool_call in self.call_history:
-            warning = "\n\n[SYSTEM WARNING]: You have called this tool with identical arguments before. Repeating actions will not change the results. Please refine your query, read a different file/range, or move on to synthesis if you have enough info."
+            error_msg = f"[SYSTEM BLOCK]: You have already executed `{tool_name}` with these exact arguments. Action blocked to prevent infinite loops. You MUST try something different."
+            self.history.append({"role": "user", "content": error_msg})
+            return error_msg
+
+        # Check for highly similar vector searches
+        if tool_name == "vector_search":
+            query = args.get("query", "")
+            words1 = set(re.findall(r'\w+', query.lower()))
+            if words1:
+                for past_call in self.call_history:
+                    if past_call.get("tool") == "vector_search":
+                        past_query = past_call.get("args", {}).get("query", "")
+                        words2 = set(re.findall(r'\w+', past_query.lower()))
+                        if words2:
+                            overlap = len(words1.intersection(words2))
+                            smaller_len = min(len(words1), len(words2))
+                            # If 80% of words overlap and length difference is small
+                            if smaller_len > 0 and (overlap / smaller_len) >= 0.8 and abs(len(words1) - len(words2)) <= 2:
+                                error_msg = f"[SYSTEM BLOCK]: Search blocked. Query '{query}' is too similar to past query '{past_query}'. You MUST use fundamentally different keywords or a different tool."
+                                self.history.append({"role": "user", "content": error_msg})
+                                return error_msg
+                                
         self.call_history.append(tool_call)
         
-        tool_msg = f"Tool result for {tool_name}:\n{result}{warning}"
+        result = self.tools.dispatch(tool_name, args)
+        
+        tool_msg = f"Tool result for {tool_name}:\n{result}"
         self.history.append({"role": "user", "content": tool_msg})
         return result
