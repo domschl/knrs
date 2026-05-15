@@ -134,7 +134,7 @@ class ResearchAgent:
         
         # Check for exact repetition
         if tool_call in self.call_history:
-            error_msg = f"[SYSTEM BLOCK]: You have already executed `{tool_name}` with these exact arguments. Action blocked to prevent infinite loops. You MUST try something different."
+            error_msg = f"[SYSTEM BLOCK]: You have already executed `{tool_name}` with these exact arguments. Action blocked to prevent infinite loops. If you have gathered enough information, synthesize your findings and finish by outputting 'TASK_COMPLETE'. Otherwise, try a completely different approach."
             self.history.append({"role": "user", "content": error_msg})
             return error_msg
 
@@ -152,7 +152,7 @@ class ResearchAgent:
                             smaller_len = min(len(words1), len(words2))
                             # If 80% of words overlap and length difference is small
                             if smaller_len > 0 and (overlap / smaller_len) >= 0.8 and abs(len(words1) - len(words2)) <= 2:
-                                error_msg = f"[SYSTEM BLOCK]: Search blocked. Query '{query}' is too similar to past query '{past_query}'. You MUST use fundamentally different keywords or a different tool."
+                                error_msg = f"[SYSTEM BLOCK]: Search blocked. Query '{query}' is too similar to past query '{past_query}'. You MUST use fundamentally different keywords, or if you have enough information, synthesize your findings and output 'TASK_COMPLETE' to finish the session."
                                 self.history.append({"role": "user", "content": error_msg})
                                 return error_msg
                                 
