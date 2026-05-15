@@ -72,7 +72,9 @@ class ResearchAgent:
         matches = re.finditer(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         for match in matches:
             try:
-                parsed = json.loads(match.group(1))
+                # Clean literal newlines inside strings just in case
+                block_text = match.group(1)
+                parsed = json.loads(block_text)
                 if isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
                     calls.append(parsed)
             except Exception:
@@ -92,16 +94,30 @@ class ResearchAgent:
             in_string = False
             escape = False
             end_idx = -1
+            cleaned_chars = []
             
             for i in range(start_idx, len(text)):
                 c = text[i]
                 if escape:
                     escape = False
+                    cleaned_chars.append(c)
                 elif c == '\\':
                     escape = True
+                    cleaned_chars.append(c)
                 elif c == '"':
                     in_string = not in_string
-                elif not in_string:
+                    cleaned_chars.append(c)
+                elif in_string:
+                    if c == '\n':
+                        cleaned_chars.append('\\n')
+                    elif c == '\r':
+                        cleaned_chars.append('\\r')
+                    elif c == '\t':
+                        cleaned_chars.append('\\t')
+                    else:
+                        cleaned_chars.append(c)
+                else:
+                    cleaned_chars.append(c)
                     if c == '{':
                         brace_count += 1
                     elif c == '}':
@@ -112,7 +128,7 @@ class ResearchAgent:
                             
             if end_idx != -1:
                 try:
-                    parsed = json.loads(text[start_idx:end_idx+1])
+                    parsed = json.loads("".join(cleaned_chars))
                     if isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
                         if parsed not in calls:
                             calls.append(parsed)
@@ -172,11 +188,11 @@ class ResearchAgent:
         if is_blocked:
             self.consecutive_blocks += 1
             if self.consecutive_blocks >= 3:
-                fatal_msg = f"[SYSTEM FATAL]: {error_msg} You have repeatedly ignored system blocks. Your search capabilities are now DISABLED. You MUST immediately write your final synthesis based on the information you have and output 'TASK_COMPLETE'."
+                fatal_msg = f"[SYSTEM FATAL]: {error_msg} You have repeatedly ignored system blocks. Your search capabilities are now DISABLED. You MUST immediately use the 'file_write' tool to save your final synthesized research to a markdown document, and only then output 'TASK_COMPLETE'."
                 self.history.append({"role": "user", "content": fatal_msg})
                 return fatal_msg
             else:
-                block_msg = f"[SYSTEM BLOCK {self.consecutive_blocks}/3]: {error_msg} You MUST use fundamentally different keywords, now please synthesize your findings and output 'TASK_COMPLETE' to finish the session."
+                block_msg = f"[SYSTEM BLOCK {self.consecutive_blocks}/3]: {error_msg} You MUST use fundamentally different keywords, or if you have enough information, use the 'file_write' tool to save your research to a markdown document before outputting 'TASK_COMPLETE'."
                 self.history.append({"role": "user", "content": block_msg})
                 return block_msg
                                 
