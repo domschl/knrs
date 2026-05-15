@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ class KnrsConfig:
     auto_git_sync: bool = True
     summarizer_name: str = "summarizer_linux"
     embedder_name: str = "embedder_hf"
-    agent_model: str = "gemma-4-26B-A4B-it-UD-Q4_K_XL"
+    agent_backend_name: str = "agent_api"
     calibre_library_name: str = "Calibre_Library"
     vector_chunk_size: int = 3000    # Chars. Approx 750 tokens. May require --ubatch-size 1024 on llama-server.
     vector_chunk_overlap: int = 600
@@ -148,10 +148,9 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(embedder_name, str):
         raise ValueError("Config key 'embedder_name' must be a string.")
 
-    agent_model = raw.get("agent_model", "gemma-4-26B-A4B-it-UD-Q4_K_XL")
-    if not isinstance(agent_model, str):
-        raise ValueError("Config key 'agent_model' must be a string.")
-        
+    agent_backend_name = raw.get("agent_backend_name", "agent_api")
+    if not isinstance(agent_backend_name, str):
+        raise ValueError("Config key 'agent_backend_name' must be a string.")
     calibre_library_name = raw.get("calibre_library_name", "Calibre_Library")
     if not isinstance(calibre_library_name, str):
         raise ValueError("Config key 'calibre_library_name' must be a string.")
@@ -185,8 +184,8 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         target_series=target_series,
         auto_git_sync=auto_git_sync,
         summarizer_name=summarizer_name,
+        agent_backend_name=agent_backend_name,
         embedder_name=embedder_name,
-        agent_model=agent_model,
         calibre_library_name=calibre_library_name,
         external_library=resolve(external_library_raw),
         vector_chunk_size=vector_chunk_size,
@@ -205,7 +204,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  auto_git_sync:   %s", cfg.auto_git_sync)
     logger.debug("  summarizer_name: %s", cfg.summarizer_name)
     logger.debug("  embedder_name:   %s", cfg.embedder_name)
-    logger.debug("  agent_model:     %s", cfg.agent_model)
+    logger.debug("  agent_backend:   %s", cfg.agent_backend_name)
     logger.debug("  calibre_library_name: %s", cfg.calibre_library_name)
     logger.debug("  external_library: %s", cfg.external_library)
 
@@ -232,7 +231,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("auto_git_sync", str(cfg.auto_git_sync)),
         ("summarizer_name", cfg.summarizer_name),
         ("embedder_name", cfg.embedder_name),
-        ("agent_model", cfg.agent_model),
+        ("agent_backend_name", cfg.agent_backend_name),
         ("calibre_library_name", cfg.calibre_library_name),
         ("external_library", str(cfg.external_library)),
         ("vector_chunk_size", str(cfg.vector_chunk_size)),
@@ -245,45 +244,65 @@ def print_config(cfg: KnrsConfig) -> None:
 
     rprint(Panel(table, title="[bold]knrs configuration[/bold]", expand=False))
 
+# Set of valid top-level keys for knrs.json, used by /set-param global validation.
+KNRS_CONFIG_FIELDS: frozenset[str] = frozenset(
+    f.name for f in dataclass_fields(KnrsConfig)
+)
+
+
 def update_knrs_config(key: str, value: Any, config_path: Path | None = None) -> bool:
     """Update a single key in knrs.json and save it."""
     path = config_path or knrs_config_file()
     if not path.exists():
         return False
-        
+
     try:
         with path.open("r", encoding="utf-8") as fh:
             raw = json.load(fh)
-            
+
         raw[key] = value
-        
+
         temp_path = path.with_suffix(".json.tmp")
         with temp_path.open("w", encoding="utf-8") as fh:
             json.dump(raw, fh, indent=4)
-        
+
         temp_path.replace(path)
         return True
     except Exception as e:
         logger.error("Failed to update knrs.json: %s", e)
         return False
 
-def update_platform_config(filename: str, key: str, value: Any) -> bool:
-    """Update a specific backend or shared config file in ~/.config/knrs/."""
+
+def update_platform_config(filename: str, key: str, value: Any, default_config: dict | None = None) -> bool:
+    """Update a single key in ~/.config/knrs/<filename>.
+
+    If the file does not exist and *default_config* is provided, the file is
+    created from the defaults before the key is written.  Without defaults
+    the function logs an error and returns False.
+    """
     path = knrs_config_file().parent / filename
-    if not path.exists():
-        logger.error("Config file not found: %s", path)
-        return False
-        
     try:
-        with path.open("r", encoding="utf-8") as fh:
-            raw = json.load(fh)
-            
+        if path.exists():
+            with path.open("r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        elif default_config is not None:
+            raw = default_config.copy()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info("Creating config file %s with defaults before update.", path)
+        else:
+            logger.error(
+                "Config file not found: %s — run the backend once to create it, "
+                "or use /set-param to create it.",
+                path,
+            )
+            return False
+
         raw[key] = value
-        
+
         temp_path = path.with_suffix(".json.tmp")
         with temp_path.open("w", encoding="utf-8") as fh:
             json.dump(raw, fh, indent=4)
-            
+
         temp_path.replace(path)
         return True
     except Exception as e:

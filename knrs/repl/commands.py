@@ -502,7 +502,7 @@ def cmd_backends(args: list[str], cfg: KnrsConfig):
     table.add_column("Platform", style="green")
     table.add_column("Active", justify="center")
     
-    active_backends = [cfg.summarizer_name, cfg.embedder_name]
+    active_backends = [cfg.summarizer_name, cfg.embedder_name, cfg.agent_backend_name, "md_converter"]
     
     for name, cap in mgr.get_backends().items():
         is_active = "✓" if name in active_backends else ""
@@ -558,7 +558,7 @@ def cmd_set_backend(args: list[str], cfg: KnrsConfig):
         return
         
     from knrs.config import update_knrs_config
-    key = f"{btype}_name"
+    key = f"{btype}_backend_name" if btype == "agent" else f"{btype}_name"
     
     if update_knrs_config(key, bname):
         setattr(cfg, key, bname)
@@ -569,60 +569,127 @@ def cmd_set_backend(args: list[str], cfg: KnrsConfig):
 def cmd_set_param(args: list[str], cfg: KnrsConfig):
     if len(args) < 3:
         console.print("[red]Usage: /set-param <backend|global|llm-server> <key> <value>[/red]")
-        console.print("Example: /set-param summarizer_api model_name gemma-4-26b")
+        console.print("Example: /set-param agent_api default_max_tokens 8000")
         return
-        
+
     target, key = args[0], args[1]
     value_str = " ".join(args[2:])
-    
-    # Try to parse value as int/float/bool if possible
-    if value_str.lower() == "true": value = True
-    elif value_str.lower() == "false": value = False
-    else:
-        try:
-            if "." in value_str: value = float(value_str)
-            else: value = int(value_str)
-        except ValueError:
-            value = value_str
 
-    from knrs.config import update_knrs_config, update_platform_config
-    
+    # ── Type coercion ──────────────────────────────────────────────────────────
+    def coerce(val_str: str, type_hint: str | None = None) -> object:
+        """Parse value_str to the appropriate Python type."""
+        if val_str.lower() == "true":
+            return True
+        if val_str.lower() == "false":
+            return False
+        if type_hint == "int":
+            try:
+                return int(val_str)
+            except ValueError:
+                return val_str
+        if type_hint == "float":
+            try:
+                return float(val_str)
+            except ValueError:
+                return val_str
+        try:
+            if "." in val_str:
+                return float(val_str)
+            return int(val_str)
+        except ValueError:
+            return val_str
+
+    from knrs.config import update_knrs_config, update_platform_config, KNRS_CONFIG_FIELDS
+
+    # ── global: knrs.json ──────────────────────────────────────────────────────
     if target == "global":
+        if key not in KNRS_CONFIG_FIELDS:
+            console.print(f"[red]Invalid global config key: '{key}'[/red]")
+            console.print(f"Valid keys: {', '.join(sorted(KNRS_CONFIG_FIELDS))}")
+            return
+        value = coerce(value_str)
         if update_knrs_config(key, value):
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
-            console.print(f"[green]Successfully updated global config: {key} = {value}[/green]")
+            console.print(f"[green]Global config updated: {key} = {value!r}[/green]")
         else:
             console.print("[red]Failed to update global config[/red]")
-    elif target == "llm-server":
+        return
+
+    # ── llm-server: llm_server.json ────────────────────────────────────────────
+    if target == "llm-server":
+        LLM_SERVER_KEYS = {"url", "api_type", "api_key"}
+        if key not in LLM_SERVER_KEYS:
+            console.print(f"[red]Invalid llm-server key: '{key}'[/red]")
+            console.print(f"Valid keys: {', '.join(sorted(LLM_SERVER_KEYS))}")
+            return
+        value = coerce(value_str)
         if update_platform_config("llm_server.json", key, value):
-            console.print(f"[green]Successfully updated llm-server config: {key} = {value}[/green]")
+            console.print(f"[green]llm-server config updated: {key} = {value!r}[/green]")
         else:
             console.print("[red]Failed to update llm-server config[/red]")
-    else:
-        # Assume it's a backend name
-        mgr = _get_backend_manager()
-        cap = mgr.get_backend(target)
-        if not cap:
-            console.print(f"[red]Unknown target or backend: {target}[/red]")
-            return
-            
+        return
+
+    # ── backend config ─────────────────────────────────────────────────────────
+    mgr = _get_backend_manager()
+    cap = mgr.get_backend(target)
+    if not cap:
+        console.print(f"[red]Unknown target or backend: '{target}'[/red]")
+        console.print("Use /backends to see available backends.")
+        return
+
+    parameters = cap.get("parameters", {})
+    # Handle legacy list format gracefully
+    if isinstance(parameters, list):
+        parameters = {k: {"type": "str"} for k in parameters}
+
+    if parameters and key not in parameters:
+        console.print(f"[red]Invalid parameter '{key}' for backend '{target}'.[/red]")
+        writable = [k for k, v in parameters.items() if not v.get("read_only")]
+        console.print(f"Configurable parameters: {', '.join(writable) or '(none)'}")
+        return
+
+    param_meta = parameters.get(key, {})
+
+    # Block read-only params
+    if param_meta.get("read_only"):
+        console.print(f"[red]Parameter '{key}' is read-only (managed internally by the backend).[/red]")
+        return
+
+    # Coerce and range-check
+    type_hint = param_meta.get("type")
+    value = coerce(value_str, type_hint)
+    if type_hint == "int" and not isinstance(value, int):
+        console.print(f"[red]Parameter '{key}' expects an integer, got: {value_str!r}[/red]")
+        return
+    if type_hint == "float" and not isinstance(value, (int, float)):
+        console.print(f"[red]Parameter '{key}' expects a float, got: {value_str!r}[/red]")
+        return
+    if type_hint == "str" and not isinstance(value, str):
+        value = value_str  # Keep as string
+
+    min_val = param_meta.get("min")
+    max_val = param_meta.get("max")
+    if min_val is not None and value < min_val:
+        console.print(f"[red]Value {value} is below minimum {min_val} for '{key}'.[/red]")
+        return
+    if max_val is not None and value > max_val:
+        console.print(f"[red]Value {value} exceeds maximum {max_val} for '{key}'.[/red]")
+        return
+
+    # Determine config file — prefer the explicit config_file from capabilities
+    config_file = cap.get("config_file")
+    if not config_file:
+        # Fallback: infer from backend name (legacy backends without config_file)
         btype = cap.get("type", "unknown")
-        # Convention: platform configs are named like summarizer_config_api.json, or embedder_config_hf.json
-        # Wait, the naming convention isn't perfectly uniform.
-        # It's usually <type>_config_<suffix>.json. Let's just try to infer it.
-        # summarizer_api -> summarizer_config_api.json
-        # summarizer_macos -> summarizer_config_macos.json
         suffix = target.replace(btype + "_", "")
-        if not suffix or suffix == target:
-            filename = f"{btype}_config_{target}.json"
-        else:
-            filename = f"{btype}_config_{suffix}.json"
-            
-        if update_platform_config(filename, key, value):
-            console.print(f"[green]Successfully updated {filename}: {key} = {value}[/green]")
-        else:
-            console.print(f"[yellow]Attempted to update {filename} but it may not exist yet or failed.[/yellow]")
+        config_file = f"{btype}_config_{suffix}.json" if suffix != target else f"{btype}_config_{target}.json"
+
+    if update_platform_config(config_file, key, value):
+        console.print(f"[green]{config_file}: {key} = {value!r}[/green]")
+    else:
+        console.print(f"[red]Failed to update {config_file}[/red]")
+        console.print(f"[yellow]Tip: run the backend once to auto-create its config, or it will be created on next use.[/yellow]")
 
 def cmd_research(args: list[str], cfg: KnrsConfig):
     if not args:
@@ -640,10 +707,8 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
     topic = " ".join(topic_parts)
     
     from knrs.agent.agent import ResearchAgent
+    from knrs.agent.engine import AgentSession
     from pathlib import Path
-    
-    # Get model choice from global config or fallback
-    model_name = getattr(cfg, "agent_model", "gemma-4-26B-A4B-it-UD-Q4_K_XL")
     
     # Checkpoint path
     safe_topic = "".join(c for c in topic if c.isalnum() or c in (" ", "-", "_")).strip()
@@ -651,81 +716,87 @@ def cmd_research(args: list[str], cfg: KnrsConfig):
         safe_topic = "ResumeSession"
     ckpt_path = cfg.wiki_path / "AINotes" / "Research" / ".checkpoints" / f"{safe_topic}.json"
     
-    agent = ResearchAgent(cfg, model_name)
-    
-    if resume:
-        if ckpt_path.exists():
-            agent.load_checkpoint(ckpt_path)
-            console.print(f"[green]Resumed session from {ckpt_path.name}[/green]")
-            # If we don't have a new topic, just use what we have in history.
-            if topic:
-                agent.history.append({"role": "user", "content": f"New instruction: {topic}"})
-        else:
-            console.print(f"[red]No checkpoint found for topic '{topic}' to resume from.[/red]")
-            return
-    else:
-        # Initial prompt
-        init_prompt = f"Please research the following topic: '{topic}'.\n\nDevelop a plan and use the available tools to find relevant information. Then synthesize your findings into a comprehensive research document."
-        agent.history.append({"role": "user", "content": init_prompt})
-        
-    # Execute loop
-    step_count = 0
-    max_steps = 30
-    
-    while step_count < max_steps:
-        console.print(f"[dim]Agent thinking (Step {step_count+1})...[/dim]")
-        
-        try:
-            is_done, msg, tool_calls = agent.step()
-        except Exception as e:
-            console.print(f"[red]Agent Error: {e}[/red]")
-            break
+    try:
+        with AgentSession(cfg) as session:
+            agent = ResearchAgent(cfg, session)
             
-        agent.save_checkpoint(ckpt_path)
-        
-        # Display the agent's thought/message (strip out the JSON block for cleaner output if desired, or show it)
-        # We'll just show it via markdown
-        from rich.markdown import Markdown
-        console.print(Markdown(msg))
-        
-        if is_done:
-            console.print("[bold green]Research Task Complete![/bold green]")
-            break
-            
-        if tool_calls:
-            stop_session = False
-            for tool_call in tool_calls:
-                tool_name = tool_call.get("tool")
-                tool_args = tool_call.get("args", {})
-                
-                console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
-                
-                console.print(f"[dim]Executing {tool_name}...[/dim]")
-                try:
-                    result = agent.execute_tool(tool_call)
-                    # print a short preview of the result
-                    preview = result[:200].replace("\n", " ") + "..." if len(result) > 200 else result
-                    console.print(f"[dim]Tool result preview: {preview}[/dim]")
-                except Exception as e:
-                    console.print(f"[red]Tool execution error: {e}[/red]")
-                    agent.history.append({"role": "user", "content": f"Tool execution failed with error: {e}"})
-                    
-            agent.save_checkpoint(ckpt_path)
-            if stop_session:
-                break
-        else:
-            # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
-            if any(word in msg.lower() for word in ["finished", "completed", "done", "synthesis", "synthesized", "wrote", "written"]):
-                nudge_msg = "[SYSTEM NUDGE]: It looks like you might be finished. If so, please output 'TASK_COMPLETE' to end the session. If not, you MUST execute a tool call using the JSON format."
+            if resume:
+                if ckpt_path.exists():
+                    agent.load_checkpoint(ckpt_path)
+                    console.print(f"[green]Resumed session from {ckpt_path.name}[/green]")
+                    # If we don't have a new topic, just use what we have in history.
+                    if topic:
+                        agent.history.append({"role": "user", "content": f"New instruction: {topic}"})
+                else:
+                    console.print(f"[red]No checkpoint found for topic '{topic}' to resume from.[/red]")
+                    return
             else:
-                nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
-            
-            agent.history.append({"role": "user", "content": nudge_msg})
+                # Initial prompt
+                init_prompt = f"Please research the following topic: '{topic}'.\n\nDevelop a plan and use the available tools to find relevant information. Then synthesize your findings into a comprehensive research document."
+                agent.history.append({"role": "user", "content": init_prompt})
                 
-        step_count += 1
-        
-    if step_count >= max_steps:
-        console.print("[yellow]Agent reached maximum steps limit.[/yellow]")
+            # Execute loop
+            step_count = 0
+            max_steps = 30
+            
+            while step_count < max_steps:
+                console.print(f"[dim]Agent thinking (Step {step_count+1})...[/dim]")
+                
+                try:
+                    is_done, msg, tool_calls = agent.step()
+                except Exception as e:
+                    console.print(f"[red]Agent Error: {e}[/red]")
+                    break
+                    
+                agent.save_checkpoint(ckpt_path)
+                
+                # Display the agent's thought/message via markdown
+                from rich.markdown import Markdown
+                console.print(Markdown(msg))
+                
+                if is_done:
+                    console.print("[bold green]Research Task Complete![/bold green]")
+                    break
+                    
+                if tool_calls:
+                    stop_session = False
+                    for tool_call in tool_calls:
+                        tool_name = tool_call.get("tool")
+                        tool_args = tool_call.get("args", {})
+                        
+                        console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
+                        
+                        console.print(f"[dim]Executing {tool_name}...[/dim]")
+                        try:
+                            result = agent.execute_tool(tool_call)
+                            # print a short preview of the result
+                            preview = result[:200].replace("\n", " ") + "..." if len(result) > 200 else result
+                            console.print(f"[dim]Tool result preview: {preview}[/dim]")
+                        except Exception as e:
+                            console.print(f"[red]Tool execution error: {e}[/red]")
+                            agent.history.append({"role": "user", "content": f"Tool execution failed with error: {e}"})
+                            
+                    agent.save_checkpoint(ckpt_path)
+                    if stop_session:
+                        break
+                else:
+                    # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
+                    if any(word in msg.lower() for word in ["finished", "completed", "done", "synthesis", "synthesized", "wrote", "written"]):
+                        nudge_msg = "[SYSTEM NUDGE]: It looks like you might be finished. If so, please output 'TASK_COMPLETE' to end the session. If not, you MUST execute a tool call using the JSON format."
+                    else:
+                        nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
+                    
+                    agent.history.append({"role": "user", "content": nudge_msg})
+                        
+                step_count += 1
+                
+            if step_count >= max_steps:
+                console.print("[yellow]Agent reached maximum steps limit.[/yellow]")
+    except FileNotFoundError as e:
+        console.print(f"[red]Agent backend error: {e}[/red]")
+        console.print("[yellow]Check that the agent backend is installed. Use /backends to see available backends and /set-backend agent <name> to switch.[/yellow]")
+    except RuntimeError as e:
+        console.print(f"[red]Agent backend error: {e}[/red]")
 
 def cmd_research_list(args: list[str], cfg: KnrsConfig):
     research_dir = cfg.wiki_path / "AINotes" / "Research"
