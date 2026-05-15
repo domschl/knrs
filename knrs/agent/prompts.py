@@ -44,6 +44,10 @@ You have access to the following tools:
    Create a subdirectory in AINotes/Research/.
    Example: {"tool": "create_directory", "args": {"path": "RomanLaw"}}
 
+8. `file_move(src, dst)`
+   Move or rename a file or directory strictly within AINotes/Research/. Both src and dst must be within AINotes/Research/.
+   Example: {"tool": "file_move", "args": {"src": "RomanLaw.md", "dst": "RomanLaw/RomanLaw.md"}}
+
 YOUR WORKFLOW:
 You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
 

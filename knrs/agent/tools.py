@@ -222,6 +222,41 @@ class AgentTools:
         except Exception as e:
             return f"Error creating directory {path}: {e}"
 
+    def file_move(self, src: str, dst: str) -> str:
+        """Move or rename a file or directory within AINotes/Research/."""
+        try:
+            import shutil
+
+            # Remove redundant AINotes/Research/ prefix if agent included it
+            if src.startswith("AINotes/Research/"):
+                src = src[len("AINotes/Research/"):]
+            if dst.startswith("AINotes/Research/"):
+                dst = dst[len("AINotes/Research/"):]
+                
+            p_src = Path(src)
+            if not p_src.is_absolute():
+                p_src = self.research_root / p_src
+            
+            p_dst = Path(dst)
+            if not p_dst.is_absolute():
+                p_dst = self.research_root / p_dst
+                
+            if not self._is_safe_write_path(p_src):
+                return f"Error: Cannot move source from outside {self.research_root}"
+            if not self._is_safe_write_path(p_dst):
+                return f"Error: Cannot move destination outside {self.research_root}"
+                
+            if not p_src.exists():
+                return f"Error: Source does not exist: {src}"
+                
+            # Create destination directory if it doesn't exist
+            p_dst.parent.mkdir(parents=True, exist_ok=True)
+                
+            shutil.move(str(p_src), str(p_dst))
+            return f"Successfully moved {src} to {dst}"
+        except Exception as e:
+            return f"Error moving {src} to {dst}: {e}"
+
     def dispatch(self, tool_name: str, args: dict[str, Any]) -> str:
         """Execute a tool dynamically."""
         logger.info(f"Agent tool call: {tool_name}({args})")
@@ -239,5 +274,7 @@ class AgentTools:
             return self.file_append(**args)
         elif tool_name == "create_directory":
             return self.create_directory(**args)
+        elif tool_name == "file_move":
+            return self.file_move(**args)
         else:
             return f"Error: Unknown tool {tool_name}"
