@@ -23,6 +23,7 @@ class ResearchAgent:
         self.tools = AgentTools(config)
         self.history = []
         self.call_history = []
+        self.consecutive_blocks = 0
         
         self.history.append({"role": "system", "content": SYSTEM_PROMPT})
         
@@ -132,14 +133,16 @@ class ResearchAgent:
         tool_name = tool_call.get("tool")
         args = tool_call.get("args", {})
         
+        is_blocked = False
+        error_msg = ""
+        
         # Check for exact repetition
         if tool_call in self.call_history:
-            error_msg = f"[SYSTEM BLOCK]: You have already executed `{tool_name}` with these exact arguments. Action blocked to prevent infinite loops. If you have gathered enough information, synthesize your findings and finish by outputting 'TASK_COMPLETE'. Otherwise, try a completely different approach."
-            self.history.append({"role": "user", "content": error_msg})
-            return error_msg
+            is_blocked = True
+            error_msg = f"You have already executed `{tool_name}` with these exact arguments."
 
         # Check for highly similar vector searches
-        if tool_name == "vector_search":
+        elif tool_name == "vector_search":
             query = args.get("query", "")
             words1 = set(re.findall(r'\w+', query.lower()))
             if words1:
@@ -152,10 +155,22 @@ class ResearchAgent:
                             smaller_len = min(len(words1), len(words2))
                             # If 80% of words overlap and length difference is small
                             if smaller_len > 0 and (overlap / smaller_len) >= 0.8 and abs(len(words1) - len(words2)) <= 2:
-                                error_msg = f"[SYSTEM BLOCK]: Search blocked. Query '{query}' is too similar to past query '{past_query}'. You MUST use fundamentally different keywords, or if you have enough information, synthesize your findings and output 'TASK_COMPLETE' to finish the session."
-                                self.history.append({"role": "user", "content": error_msg})
-                                return error_msg
+                                is_blocked = True
+                                error_msg = f"Search blocked. Query '{query}' is too similar to past query '{past_query}'."
+                                break
+
+        if is_blocked:
+            self.consecutive_blocks = getattr(self, "consecutive_blocks", 0) + 1
+            if self.consecutive_blocks >= 3:
+                fatal_msg = f"[SYSTEM FATAL]: {error_msg} You have repeatedly ignored system blocks. Your search capabilities are now DISABLED. You MUST immediately write your final synthesis based on the information you have and output 'TASK_COMPLETE'."
+                self.history.append({"role": "user", "content": fatal_msg})
+                return fatal_msg
+            else:
+                block_msg = f"[SYSTEM BLOCK {self.consecutive_blocks}/3]: {error_msg} You MUST use fundamentally different keywords, now please synthesize your findings and output 'TASK_COMPLETE' to finish the session."
+                self.history.append({"role": "user", "content": block_msg})
+                return block_msg
                                 
+        self.consecutive_blocks = 0
         self.call_history.append(tool_call)
         
         result = self.tools.dispatch(tool_name, args)
