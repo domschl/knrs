@@ -84,7 +84,7 @@ def main():
 
     is_macos = platform.system() == "Darwin"
     
-    print("\n--- Syncing subprocesses ---")
+    print("\n--- Syncing and initializing subprocesses ---")
     for item in sorted(sub_dir.iterdir()):
         if not item.is_dir():
             continue
@@ -100,6 +100,12 @@ def main():
 
         print(f"\nSyncing {item.name}...")
         run_command(["uv", "sync"], cwd=item)
+
+        # Trigger initialization by querying capabilities
+        script = item / f"{item.name}.py"
+        if script.exists():
+            print(f"Initializing {item.name}...")
+            subprocess.run(["uv", "run", "python", str(script), "--capabilities"], cwd=item, capture_output=True)
 
         # 3. Handle XPU overlay
         use_xpu = args.xpu or wants_xpu(item)

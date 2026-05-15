@@ -10,7 +10,10 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import requests
+
+# Setup logging (to stderr so stdout stays clean for protocol/capabilities)
 from rich.logging import RichHandler
+from rich.console import Console
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,6 +24,7 @@ logging.basicConfig(
             rich_tracebacks=True,
             show_path=False,
             markup=False,
+            console=Console(stderr=True),
         )
     ],
 )
@@ -58,34 +62,32 @@ def _embed(url: str, api_key: Optional[str], model: str, input_path: Path, outpu
         
         embeddings: List[List[float]]
         # OpenAI format: {"data": [{"embedding": [...], "index": 0}, ...]}
-        if "data" in data:
-            # Sort by index to ensure correct order
-            results = sorted(data["data"], key=lambda x: x["index"])
-            embeddings = [r["embedding"] for r in results]
-        elif "results" in data:
-            # llama.cpp legacy format
-            embeddings = [r["embedding"] for r in data["results"]]
-        elif "embedding" in data:
-            if isinstance(data["embedding"][0], list):
-                embeddings = data["embedding"]
-            else:
-                embeddings = [data["embedding"]]
+        if "data" in data and isinstance(data["data"], list):
+            # Sort by index to ensure order if not guaranteed
+            sorted_data = sorted(data["data"], key=lambda x: x.get("index", 0))
+            embeddings = [item["embedding"] for item in sorted_data]
+            np.save(str(output_path), np.array(embeddings, dtype=np.float32))
         else:
-            raise ValueError(f"Unexpected response format from server: {data}")
+            logger.error("Unexpected API response format: %s", data)
+            raise ValueError("Malformed API response")
             
-        embeddings_np = np.array(embeddings, dtype=np.float32)
-        np.save(str(output_path), embeddings_np)
     except Exception as e:
-        logger.error(f"Embedding request failed: {e}")
+        logger.error("Embedding request failed: %s", e)
         raise
 
-def server_mode(url: str, api_key: Optional[str], model: str) -> None:
-    """Persistent server: handles requests via stdin/stdout."""
-    # Suppress noise during serving
+def server_mode() -> None:
+    """Persistent server: load config once, serve many batches."""
+    server_cfg = get_llm_server_config()
+    local_cfg = get_platform_config("embedder_config_api.json", DEFAULT_LOCAL_CONFIG)
+    
+    url = server_cfg["url"].rstrip("/")
+    api_key = server_cfg.get("api_key")
+    model = local_cfg["model_name"]
+    
+    # Suppress INFO-level noise during serving so it doesn't fight rich bars.
     logging.getLogger().setLevel(logging.WARNING)
     logger.setLevel(logging.WARNING)
-
-    # Signal readiness
+    # Signal readiness to parent before entering the loop.
     print("READY", flush=True)
 
     for raw_line in sys.stdin:
@@ -94,14 +96,11 @@ def server_mode(url: str, api_key: Optional[str], model: str) -> None:
             continue
         parts = line.split()
         if len(parts) != 3:
+            # We ignore mode (parts[0]) here as it's always standard embeddings for now
             print(f"ERROR: expected 'MODE INPUT OUTPUT', got {line!r}", flush=True)
             continue
-        mode, input_path, output_path = parts[0], Path(parts[1]), Path(parts[2])
+        input_path, output_path = Path(parts[1]), Path(parts[2])
         try:
-            # Note: llama-server typically handles the "query" vs "document" prefix 
-            # internally if configured, or we'd need to add it to texts.
-            # For gemma-300m, it's often better to just send as-is unless specific 
-            # prefixes are required by the server setup.
             _embed(url, api_key, model, input_path, output_path)
             print("DONE", flush=True)
         except Exception as exc:
@@ -111,17 +110,15 @@ def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
-    server_cfg = get_llm_server_config()
-    local_cfg = get_platform_config("embedder_config_api.json", DEFAULT_LOCAL_CONFIG)
-    
-    url: str = server_cfg["url"].rstrip("/")
-    api_key: Optional[str] = server_cfg.get("api_key")
-    model: str = local_cfg["model_name"]
-
     if len(sys.argv) == 2 and sys.argv[1] == "--capabilities":
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        server_config = get_llm_server_config()
+        url = server_config.get("url", "http://localhost:8180").rstrip("/")
+        api_key = server_config.get("api_key")
+        headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        
+        available_models: List[str] = []
         try:
             response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
             response.raise_for_status()
@@ -129,32 +126,36 @@ def main() -> None:
             available_models = [m["id"] for m in data.get("data", [])]
         except Exception as e:
             logger.error(f"Failed to query {url}/v1/models: {e}")
-            available_models = []
 
         cap: Dict[str, Any] = {
             "name": "embedder_api",
             "type": "embedder",
             "config_file": "embedder_config_api.json",
             "platform": "any",
-            "validated_models": ["embeddinggemma-300M-Q8_0"],
+            "validated_models": [DEFAULT_LOCAL_CONFIG["model_name"]],
             "available_models": available_models,
             "parameters": {
                 "model_name": {"type": "str"},
-                "batch_size":  {"type": "int", "min": 1, "max": 512},
+                "batch_size": {"type": "int", "min": 1, "max": 512}
             },
         }
         print(json.dumps(cap))
         sys.exit(0)
     elif len(sys.argv) == 2 and sys.argv[1] == "--server":
-        server_mode(url, api_key, model)
+        server_mode()
     elif len(sys.argv) == 5 and sys.argv[1] == "--mode":
-        mode = sys.argv[2]
+        server_cfg = get_llm_server_config()
+        local_cfg = get_platform_config("embedder_config_api.json", DEFAULT_LOCAL_CONFIG)
+        url = server_cfg["url"].rstrip("/")
+        api_key = server_cfg.get("api_key")
+        model = local_cfg["model_name"]
+        
         _embed(url, api_key, model, Path(sys.argv[3]), Path(sys.argv[4]))
     else:
         print("Usage:")
-        print("  embedder_api.py --capabilities")
-        print("  embedder_api.py --server")
-        print("  embedder_api.py --mode query|document in.json out.npy")
+        print("  embedder_api.py --capabilities                     # print capabilities as JSON")
+        print("  embedder_api.py --server                           # persistent server mode")
+        print("  embedder_api.py --mode query|document in.json out.npy # one-shot mode")
         sys.exit(1)
 
 if __name__ == "__main__":

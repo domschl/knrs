@@ -25,8 +25,9 @@ from summarizer_core.markdown import parse_markdown, assemble_markdown
 from summarizer_core.summarizer import chunked_summarize
 from summarizer_core.utils import watchdog
 
-# Setup logging
+# Setup logging (to stderr so stdout stays clean for capabilities)
 from rich.logging import RichHandler
+from rich.console import Console
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +38,7 @@ logging.basicConfig(
             rich_tracebacks=True,
             show_path=False,
             markup=False,
+            console=Console(stderr=True),
         )
     ],
 )

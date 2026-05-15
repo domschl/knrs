@@ -7,17 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from huggingface_hub import snapshot_download
-
-# Must be set before PyTorch is imported so the CUDA allocator picks it up.
-# expandable_segments reduces fragmentation when many small tensors are
-# allocated and freed repeatedly (e.g. KV-cache per encode() call).
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
-import numpy as np
-import torch
-from sentence_transformers import SentenceTransformer
-
+# Setup logging (to stderr so stdout stays clean for capabilities/protocol)
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -66,6 +56,7 @@ def get_platform_config() -> Dict[str, Any]:
 
 
 def _get_device(config_device: str = "auto") -> str:
+    import torch
     if config_device and config_device != "auto":
         return config_device
 
@@ -78,7 +69,10 @@ def _get_device(config_device: str = "auto") -> str:
     return "cpu"
 
 
-def _load_model() -> SentenceTransformer:
+def _load_model() -> Any:
+    from huggingface_hub import snapshot_download
+    from sentence_transformers import SentenceTransformer
+    
     # Attempt to find the model in the local HuggingFace cache to avoid 
     # the delay caused by checking for updates online (ETag requests).
     load_path: str = MODEL_NAME
@@ -100,7 +94,10 @@ def _load_model() -> SentenceTransformer:
     return model
 
 
-def _embed(model: SentenceTransformer, input_path: Path, output_path: Path, mode: str = "document") -> None:
+def _embed(model: Any, input_path: Path, output_path: Path, mode: str = "document") -> None:
+    import torch
+    import numpy as np
+    
     with input_path.open("r", encoding="utf-8") as f:
         texts: List[str] = json.load(f)
     if not texts:
@@ -129,6 +126,9 @@ def _embed(model: SentenceTransformer, input_path: Path, output_path: Path, mode
 
 def server_mode() -> None:
     """Persistent server: load model once, serve many batches."""
+    # Must be set before PyTorch is imported so the CUDA allocator picks it up.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    
     model = _load_model()
 
     # Suppress INFO-level noise during serving so it doesn't fight rich bars.
@@ -155,6 +155,9 @@ def server_mode() -> None:
 
 def one_shot_mode(mode: str, input_path: Path, output_path: Path) -> None:
     """Legacy one-shot mode for standalone / backward-compat use."""
+    # Must be set before PyTorch is imported so the CUDA allocator picks it up.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    
     model = _load_model()
     logger.info("Computing embeddings (mode=%s)...", mode)
     _embed(model, input_path, output_path, mode)
