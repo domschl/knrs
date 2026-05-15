@@ -30,6 +30,18 @@ def init_git_state(cfg: KnrsConfig):
     from knrs.paths import ensure_git_safety
     logger.info("Performing initial git safety checks...")
     
+    if getattr(cfg, "auto_git_sync", True):
+        from knrs.paths import is_git_repo, is_git_uptodate
+        sync_needed = False
+        for path in [cfg.knrs_data, cfg.wiki_path]:
+            if is_git_repo(str(path)) and not is_git_uptodate(str(path), check_remote=True):
+                sync_needed = True
+                break
+        
+        if sync_needed:
+            console.print("[bold yellow]Git repos not in sync on startup. Attempting auto_git_sync...[/bold yellow]")
+            cmd_sync_git(["Auto-sync on startup"], cfg)
+            
     GIT_STATE["knrs_data_safe_local"] = ensure_git_safety(cfg.knrs_data, check_remote=False)
     if not GIT_STATE["knrs_data_safe_local"]:
         console.print(f"[yellow]Warning: {cfg.knrs_data} is not up-to-date (local changes). State-changing commands will be blocked.[/yellow]")
@@ -55,6 +67,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig):
     table.add_column("Description")
     
     table.add_row(r"/sync \[--force] \[--dry-run]", "Run full sync pipeline (calibre -> summaries -> wiki -> timeline -> index -> external-lib -> check-wiki)")
+    table.add_row(r"/sync-git \[commit-message]", "Add, commit, pull, and push changes in wiki and data repos, then unblock sync")
     table.add_row(r"/sync-calibre \[--dry-run] \[--force]", "Sync Calibre library to MarkdownBooks")
     table.add_row(r"/sync-summaries \[--dry-run] \[--force]", "Sync MarkdownBooks to BookSummaries")
     table.add_row(r"/sync-wiki \[--force]", "Sync KnrsData to Wiki/AINotes")
@@ -342,6 +355,86 @@ def cmd_search(args: list[str], cfg: KnrsConfig):
     except FileNotFoundError:
         console.print("[red]Error: Index not found. Run /index first.[/red]")
 
+def cmd_sync_git(args: list[str], cfg: KnrsConfig):
+    from knrs.paths import is_git_repo
+    import subprocess
+    
+    commit_msg = " ".join(args) if args else "Automated sync via knrs /sync-git"
+    
+    for name, path in [("wiki_path", cfg.wiki_path), ("knrs_data", cfg.knrs_data)]:
+        path_str = str(path)
+        if not is_git_repo(path_str):
+            continue
+            
+        console.print(f"[bold blue]Syncing git repo at {path_str}...[/bold blue]")
+        
+        try:
+            # 1. git add
+            subprocess.run(["git", "add", "-A"], cwd=path_str, check=True)
+            
+            # 2. git commit
+            status = subprocess.run(["git", "status", "--porcelain"], cwd=path_str, capture_output=True, text=True).stdout
+            if status:
+                final_msg = commit_msg
+                if not args and getattr(cfg, "auto_git_sync", True):
+                    from knrs.summarizer.engine import answer_query
+                    import tempfile
+                    from pathlib import Path
+                    
+                    diff = subprocess.run(["git", "diff", "--cached"], cwd=path_str, capture_output=True, text=True).stdout
+                    if diff:
+                        console.print(f"[dim]Generating commit message for {name}...[/dim]")
+                        diff_text = diff[:8000] if len(diff) > 8000 else diff
+                        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as src_fd:
+                            src_fd.write(f"Git Diff:\n{diff_text}")
+                            src_path = Path(src_fd.name)
+                        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as dst_fd:
+                            dst_path = Path(dst_fd.name)
+                        try:
+                            q = "Generate a concise git commit message (1 line) for these changes. Respond ONLY with the message, no quotes or prefix."
+                            success = answer_query(q, src_path, dst_path, cfg.summarizer_name, summary_max_tokens=50)
+                            if success and dst_path.exists():
+                                with open(dst_path, "r", encoding="utf-8") as f:
+                                    msg = f.read().strip()
+                                    if msg:
+                                        if msg.startswith('"') and msg.endswith('"'):
+                                            msg = msg[1:-1]
+                                        final_msg = msg
+                        except Exception as e:
+                            console.print(f"[yellow]Failed to generate commit message: {e}[/yellow]")
+                        finally:
+                            if src_path.exists(): src_path.unlink()
+                            if dst_path.exists(): dst_path.unlink()
+
+                subprocess.run(["git", "commit", "-m", final_msg], cwd=path_str, check=True)
+                console.print(f"[green]Committed changes in {name}.[/green]")
+            else:
+                console.print(f"[dim]No local changes to commit in {name}.[/dim]")
+                
+            # 3. git pull
+            console.print(f"[dim]Pulling changes from remote for {name}...[/dim]")
+            pull_result = subprocess.run(["git", "pull", "--no-rebase", "--no-edit"], cwd=path_str, capture_output=True, text=True)
+                
+            if pull_result.returncode != 0:
+                console.print(f"[red]Failed to pull changes for {name}. You might have conflicts. Details:\n{pull_result.stderr}[/red]")
+                continue
+                
+            # 4. git push
+            console.print(f"[dim]Pushing changes to remote for {name}...[/dim]")
+            push_result = subprocess.run(["git", "push"], cwd=path_str, capture_output=True, text=True)
+            if push_result.returncode != 0:
+                console.print(f"[red]Failed to push changes for {name}. Details:\n{push_result.stderr}[/red]")
+                continue
+                
+            console.print(f"[bold green]Successfully synced {name}![/bold green]")
+            
+            # Unblock in GIT_STATE
+            GIT_STATE[f"{name}_safe_local"] = True
+            GIT_STATE[f"{name}_safe_remote"] = True
+            
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error executing git command in {name}: {e}[/red]")
+
 def cmd_sync(args: list[str], cfg: KnrsConfig):
     force = "--force" in args
     
@@ -356,26 +449,32 @@ def cmd_sync(args: list[str], cfg: KnrsConfig):
 
     console.print("[bold blue]Executing full sync pipeline...[/bold blue]")
     
-    console.print("\n[bold cyan]1/7: Running /sync-calibre[/bold cyan]")
+    total_steps = 8 if getattr(cfg, "auto_git_sync", True) else 7
+    
+    console.print(f"\n[bold cyan]1/{total_steps}: Running /sync-calibre[/bold cyan]")
     cmd_sync_calibre(args, cfg)
     
-    console.print("\n[bold cyan]2/7: Running /sync-summaries[/bold cyan]")
+    console.print(f"\n[bold cyan]2/{total_steps}: Running /sync-summaries[/bold cyan]")
     cmd_sync_summaries(args, cfg)
     
-    console.print("\n[bold cyan]3/7: Running /sync-wiki[/bold cyan]")
+    console.print(f"\n[bold cyan]3/{total_steps}: Running /sync-wiki[/bold cyan]")
     cmd_sync_wiki(args, cfg)
     
-    console.print("\n[bold cyan]4/7: Running /timeline[/bold cyan]")
+    console.print(f"\n[bold cyan]4/{total_steps}: Running /timeline[/bold cyan]")
     cmd_timeline(args, cfg)
     
-    console.print("\n[bold cyan]5/7: Running /index[/bold cyan]")
+    console.print(f"\n[bold cyan]5/{total_steps}: Running /index[/bold cyan]")
     cmd_index(args, cfg)
     
-    console.print("\n[bold cyan]6/7: Running /sync-external-lib[/bold cyan]")
+    console.print(f"\n[bold cyan]6/{total_steps}: Running /sync-external-lib[/bold cyan]")
     cmd_sync_external_lib(args, cfg)
     
-    console.print("\n[bold cyan]7/7: Running /check-wiki[/bold cyan]")
+    console.print(f"\n[bold cyan]7/{total_steps}: Running /check-wiki[/bold cyan]")
     cmd_wiki_check(args, cfg)
+    
+    if getattr(cfg, "auto_git_sync", True):
+        console.print(f"\n[bold cyan]8/{total_steps}: Running /sync-git (auto_git_sync enabled)[/bold cyan]")
+        cmd_sync_git([], cfg)
     
     console.print("\n[bold green]Full sync pipeline completed![/bold green]")
 
@@ -653,6 +752,7 @@ def cmd_research_list(args: list[str], cfg: KnrsConfig):
 COMMANDS = {
     "/help": cmd_help,
     "/sync": cmd_sync,
+    "/sync-git": cmd_sync_git,
     "/sync-calibre": cmd_sync_calibre,
     "/sync-summaries": cmd_sync_summaries,
     "/sync-wiki": cmd_sync_wiki,
