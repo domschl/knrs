@@ -8,11 +8,15 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
 import numpy as np
 
 from knrs.vector.engine import get_embeddings
 from knrs.config import KnrsConfig
+
+if TYPE_CHECKING:
+    from knrs.vector.engine import EmbedderSession
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +26,7 @@ class SearchResult:
     text: str
     score: float
     chunk_index: int = 0
-    query_embedding: np.ndarray | None = None
+    query_embedding: Optional[np.ndarray] = None
 
     @property
     def source_label(self) -> str:
@@ -37,6 +41,7 @@ class SearchResult:
 def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
     from knrs.calibre.converter import _split_frontmatter
     
+    file_path: Optional[Path] = None
     if result.source_label == "books":
         file_path = searcher.config.markdown_books / result.bare_path
     elif result.source_label == "wiki":
@@ -44,7 +49,7 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
     else:
         return result.text
         
-    if not file_path.exists():
+    if file_path is None or not file_path.exists():
         return result.text
         
     try:
@@ -54,8 +59,11 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
         logger.error("Failed to read context for %s: %s", file_path, e)
         return result.text
         
-    chunk_size = searcher.metadata.get("chunk_size", 3000)
-    overlap = searcher.metadata.get("overlap", 600)
+    if searcher.metadata is None:
+        return result.text
+        
+    chunk_size: int = searcher.metadata.get("chunk_size", 3000)
+    overlap: int = searcher.metadata.get("overlap", 600)
     step = chunk_size - overlap
     
     if len(body) <= chunk_size:
@@ -79,7 +87,7 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
     prev_max = chunk_start - prev_chunk
     next_max = prev_max + chunk_size
     
-    borders = {'.', '!', '?', '\n', '。', '！', '？'}
+    borders: Set[str] = {'.', '!', '?', '\n', '。', '！', '？'}
     act_start = prev_max
     for ind in range(prev_max - 1, -1, -1):
         if extended_text[ind] in borders:
@@ -98,13 +106,13 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> str:
     result_text = extended_text[act_start:act_end].strip()
     return re.sub(r'\n{3,}', '\n\n', result_text)
 
-def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearcher, raw: bool = False, cutoff: float = 0.5, session=None) -> str:
+def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearcher, raw: bool = False, cutoff: float = 0.5, session: Optional[EmbedderSession] = None) -> str:
     context_length = 64
     context_steps = 32
     text_len = len(text)
     
-    clr = []
-    snippet_ranges = []
+    clr: List[str] = []
+    snippet_ranges: List[Tuple[int, int]] = []
     for i in range(0, text_len, context_steps):
         i0 = max(0, i - context_length // 2)
         i1 = min(text_len, i + context_length // 2 + (context_length % 2))
@@ -151,9 +159,9 @@ def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearc
         
     char_scores = np.divide(char_scores, char_counts, out=np.zeros_like(char_scores), where=char_counts!=0)
     
-    result_parts = []
+    result_parts: List[str] = []
     is_highlighted = False
-    current_part = []
+    current_part: List[str] = []
     
     for i, char in enumerate(text):
         high = char_scores[i] >= cutoff
@@ -178,16 +186,16 @@ def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearc
     return "".join(result_parts)
 
 class KnrsSearcher:
-    def __init__(self, config: KnrsConfig):
-        self.config = config
-        self.db_dir = config.vector_db
-        self.index_file = self.db_dir / "index.npy"
-        self.meta_file = self.db_dir / "index.json"
+    def __init__(self, config: KnrsConfig) -> None:
+        self.config: KnrsConfig = config
+        self.db_dir: Path = config.vector_db
+        self.index_file: Path = self.db_dir / "index.npy"
+        self.meta_file: Path = self.db_dir / "index.json"
         
-        self.embeddings = None
-        self.metadata = None
-
-    def _load(self):
+        self.embeddings: Optional[np.ndarray] = None
+        self.metadata: Optional[Dict[str, Any]] = None
+        
+    def _load(self) -> None:
         if self.embeddings is None:
             if not self.index_file.exists():
                 raise FileNotFoundError("Vector index not found. Run indexer first.")
@@ -195,10 +203,13 @@ class KnrsSearcher:
             with self.meta_file.open('r', encoding='utf-8') as f:
                 self.metadata = json.load(f)
 
-    def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
+    def search(self, query: str, top_k: int = 5) -> List[SearchResult]:
         """Perform a semantic search for the given query."""
         self._load()
         
+        if self.embeddings is None or self.metadata is None:
+            return []
+            
         # Get query embedding through the engine
         query_embeddings = get_embeddings([query], self.config, encode_mode="query")
         query_embedding = query_embeddings[0]
@@ -215,12 +226,12 @@ class KnrsSearcher:
         # Get top-k indices
         top_results = np.argpartition(-cos_scores, range(min(top_k, len(cos_scores))))[:top_k]
         
-        results = []
-        for idx in top_results:
-            idx = int(idx)
+        results: List[SearchResult] = []
+        for idx_raw in top_results:
+            idx = int(idx_raw)
             score = float(cos_scores[idx])
-            meta = self.metadata['chunks'][idx]
-            full_text = self.metadata['full_texts'][idx]
+            meta: Dict[str, Any] = self.metadata['chunks'][idx]
+            full_text: str = self.metadata['full_texts'][idx]
             
             results.append(SearchResult(
                 path=meta['path'],

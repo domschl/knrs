@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import os
 import sys
 import argparse
 import signal
 import logging
+import threading
+import hashlib
+from typing import Any, Dict, List, Optional, Union
 
 # Setup logging
 from rich.logging import RichHandler
@@ -23,7 +28,7 @@ logger = logging.getLogger("summarizer_macos")
 
 # Noise filter for external libraries
 class NoiseFilter(logging.Filter):
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if "AFC is enabled" in msg: return False
         if "HTTP Request" in msg and "200 OK" in msg: return False
@@ -34,8 +39,7 @@ for handler in logging.root.handlers:
 
 # Suppress KeyboardInterrupt globally
 signal.signal(signal.SIGINT, signal.SIG_DFL)
-import threading
-import hashlib
+
 from mlx_vlm import load, generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load_config
@@ -48,24 +52,24 @@ from summarizer_core.utils import get_platform_config, watchdog
 
 # Constants
 VERSION = "0.1.0"
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG: Dict[str, Any] = {
     "chunk_size": 200000,
     "model_id": "mlx-community/gemma-4-26b-a4b-it-4bit",
     "model_name": "gemma-4-26b-it-mlx"
 }
 
 class MLXEngine(BaseEngine):
-    def __init__(self, config: dict):
-        model_id = config.get("model_id", DEFAULT_CONFIG["model_id"])
+    def __init__(self, config: Dict[str, Any]) -> None:
+        model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)
-        self.config = load_config(model_id)
+        self.config_data: Dict[str, Any] = load_config(model_id)
 
-    def format_prompt(self, messages: list[dict[str, str]]) -> str:
-        return apply_chat_template(self.processor, self.config, messages, num_images=0)
+    def format_prompt(self, messages: List[Dict[str, str]]) -> str:
+        return apply_chat_template(self.processor, self.config_data, messages, num_images=0)
 
     def generate(self, prompt: str, max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
-        output = generate(
+        output: Any = generate(
             self.model, self.processor, prompt, [],
             max_tokens=max_tokens,
             temp=temp,
@@ -80,7 +84,7 @@ class MLXEngine(BaseEngine):
             text = str(output)
         return text
 
-def summarize_file(source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
+def summarize_file(source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -89,8 +93,8 @@ def summarize_file(source_file: str, destination_file: str, config: dict, summar
         with open(source_file, 'r', encoding='utf-8') as f:
             content = f.read()
             
-        chunk_size = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
-        model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
+        chunk_size: int = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
+        model_name: str = config.get("model_name", DEFAULT_CONFIG["model_name"])
         
         metadata, md_text = parse_markdown(content)
         
@@ -104,7 +108,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, summar
         
         summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash, final_sum_tokens=summary_max_tokens)
         
-        sum_metadata = {}
+        sum_metadata: Dict[str, Any] = {}
         if metadata:
             for key in ['title', 'authors', 'tags', 'uuid']:
                 if key in metadata:
@@ -132,7 +136,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, summar
         logger.exception(f"Error during summarization: {e}")
         sys.exit(1)
 
-def answer_query(query: str, source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
+def answer_query(query: str, source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -146,7 +150,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
         
-        prompt = prompt_text
+        prompt: Union[str, List[Dict[str, str]]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted:
@@ -171,7 +175,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         logger.exception(f"Error during Q&A: {e}")
         sys.exit(1)
 
-def main():
+def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
@@ -185,8 +189,7 @@ def main():
     args = parser.parse_args()
 
     if args.capabilities:
-        import json
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "summarizer_macos",
             "type": "summarizer",
             "config_file": "summarizer_config_macos.json",

@@ -23,6 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import TracebackType
+from typing import Any, Dict, List, Optional, Type
 
 from knrs.config import KnrsConfig
 
@@ -58,12 +59,12 @@ class AgentSession:
     """
 
     def __init__(self, config: KnrsConfig) -> None:
-        self.config = config
-        self._proc: subprocess.Popen | None = None
+        self.config: KnrsConfig = config
+        self._proc: Optional[subprocess.Popen[str]] = None
 
     # ── Context manager ────────────────────────────────────────────────────
 
-    def __enter__(self) -> "AgentSession":
+    def __enter__(self) -> AgentSession:
         agent_name = self.config.agent_backend_name
         script = _agent_script(agent_name)
         if not script.exists():
@@ -83,7 +84,10 @@ class AgentSession:
         )
 
         # Block until the subprocess has finished loading the model.
-        ready_line = self._proc.stdout.readline().strip()  # type: ignore[union-attr]
+        if self._proc.stdout is None:
+             raise RuntimeError("Subprocess stdout is None")
+             
+        ready_line = self._proc.stdout.readline().strip()
         if ready_line != "READY":
             self._proc.kill()
             raise RuntimeError(
@@ -94,13 +98,14 @@ class AgentSession:
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
     ) -> None:
         if self._proc is not None:
             try:
-                self._proc.stdin.close()   # type: ignore[union-attr]
+                if self._proc.stdin is not None:
+                    self._proc.stdin.close()
                 self._proc.wait(timeout=30)
             except Exception:
                 self._proc.kill()
@@ -110,7 +115,7 @@ class AgentSession:
 
     def generate(
         self,
-        messages: list[dict],
+        messages: List[Dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
@@ -125,23 +130,28 @@ class AgentSession:
                 "AgentSession is not active — use as a context manager."
             )
 
+        if self._proc.stdin is None:
+            raise RuntimeError("Subprocess stdin is None")
+        if self._proc.stdout is None:
+            raise RuntimeError("Subprocess stdout is None")
+
         # Send request as a single JSON line
         request = {
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
-        self._proc.stdin.write(json.dumps(request) + "\n")  # type: ignore[union-attr]
-        self._proc.stdin.flush()                              # type: ignore[union-attr]
+        self._proc.stdin.write(json.dumps(request) + "\n")
+        self._proc.stdin.flush()
 
         # Read response (blocks until generation completes)
-        response_line = self._proc.stdout.readline()  # type: ignore[union-attr]
+        response_line = self._proc.stdout.readline()
         if not response_line:
             raise RuntimeError("Agent subprocess closed stdout unexpectedly")
 
-        response = json.loads(response_line.strip())
+        response: Dict[str, Any] = json.loads(response_line.strip())
 
         if "error" in response:
             raise RuntimeError(f"Agent backend error: {response['error']}")
 
-        return response["text"]
+        return response.get("text", "")

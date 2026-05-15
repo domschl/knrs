@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -6,6 +8,8 @@ import argparse
 import logging
 import warnings
 import gc
+from typing import Any, Dict, List, Optional
+
 import torch
 from pypdf import PdfReader, PdfWriter
 from docling.datamodel.base_models import InputFormat
@@ -32,11 +36,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("md_converter")
 
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG: Dict[str, str] = {
     "device": "auto"
 }
 
-def get_platform_config():
+def get_platform_config() -> Dict[str, Any]:
     config_file = os.path.expanduser("~/.config/knrs/converter_config_md_converter.json")
     try:
         if os.path.exists(config_file):
@@ -66,7 +70,7 @@ def _get_device(config_device: str = "auto") -> str:
         return "mps"
     return "cpu"
 
-def convert(source_file: str, destination_file: str):
+def convert(source_file: str, destination_file: str) -> None:
     sys.setrecursionlimit(10000)
     
     if not os.path.exists(source_file):
@@ -113,7 +117,7 @@ def convert(source_file: str, destination_file: str):
             total_pages = len(reader.pages)
             chunk_size = 200
             
-            markdown_chunks = []
+            markdown_chunks: List[str] = []
             target_dir = os.path.dirname(destination_file)
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir, exist_ok=True)
@@ -132,14 +136,14 @@ def convert(source_file: str, destination_file: str):
                     writer.write(f_out)
                 
                 # Process chunk
-                converter = DocumentConverter(
+                converter_instance = DocumentConverter(
                     format_options={
                         InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
                     }
                 )
                 try:
-                    result = converter.convert(temp_pdf_path)
-                    markdown_content = result.document.export_to_markdown()
+                    result = converter_instance.convert(temp_pdf_path)
+                    markdown_content: str = result.document.export_to_markdown()
                     markdown_chunks.append(markdown_content)
                     
                     if hasattr(result, 'input') and hasattr(result.input, '_backend'):
@@ -149,7 +153,7 @@ def convert(source_file: str, destination_file: str):
                     # Clean up temp file and force garbage collection
                     if os.path.exists(temp_pdf_path):
                         os.remove(temp_pdf_path)
-                    del converter
+                    del converter_instance
                     gc.collect()
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
@@ -172,7 +176,7 @@ def convert(source_file: str, destination_file: str):
         logger.error(f"Error: Unsupported file extension for {source_file}. Only .pdf and .epub are supported.")
         sys.exit(1)
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Convert PDF/EPUB to Markdown (Unified)")
     parser.add_argument("source", nargs="?", help="Path to the source file (e.g. .pdf, .epub)")
     parser.add_argument("destination", nargs="?", help="Path to the destination Markdown file")
@@ -181,8 +185,7 @@ def main():
     args = parser.parse_args()
 
     if args.capabilities:
-        import json
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "md_converter",
             "type": "converter",
             "config_file": "converter_config_md_converter.json",

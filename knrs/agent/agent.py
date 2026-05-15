@@ -1,16 +1,22 @@
+from __future__ import annotations
+
 import json
 import logging
 import re
 from pathlib import Path
+from typing import Any, Dict, List, Tuple, TYPE_CHECKING
 
 from knrs.config import KnrsConfig
 from knrs.agent.tools import AgentTools
 from knrs.agent.prompts import SYSTEM_PROMPT
 
+if TYPE_CHECKING:
+    from knrs.agent.engine import AgentSession
+
 logger = logging.getLogger(__name__)
 
 class ResearchAgent:
-    def __init__(self, config: KnrsConfig, session):
+    def __init__(self, config: KnrsConfig, session: AgentSession) -> None:
         """Initialize the research agent.
 
         Args:
@@ -21,27 +27,27 @@ class ResearchAgent:
         self.config = config
         self.session = session
         self.tools = AgentTools(config)
-        self.history = []
-        self.call_history = []
-        self.consecutive_blocks = 0
+        self.history: List[Dict[str, str]] = []
+        self.call_history: List[Dict[str, Any]] = []
+        self.consecutive_blocks: int = 0
         
         self.history.append({"role": "system", "content": SYSTEM_PROMPT})
         
-    def load_checkpoint(self, path: Path):
+    def load_checkpoint(self, path: Path) -> None:
         """Load conversation history from a JSON file."""
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 self.history = json.load(f)
                 
-    def save_checkpoint(self, path: Path):
+    def save_checkpoint(self, path: Path) -> None:
         """Save conversation history to a JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.history, f, indent=2)
 
-    def _extract_tool_call(self, text: str) -> list[dict]:
+    def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
         """Find all JSON blocks containing 'tool' and 'args'."""
-        calls = []
+        calls: List[Dict[str, Any]] = []
         # First check for Gemma native tool call format
         gemma_matches = re.finditer(r'<\|tool_call>call:(\w+)(\{.*?\})<tool_call\|>', text)
         for gemma_match in gemma_matches:
@@ -63,7 +69,7 @@ class ResearchAgent:
         for match in matches:
             try:
                 parsed = json.loads(match.group(1))
-                if "tool" in parsed and "args" in parsed:
+                if isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
                     calls.append(parsed)
             except Exception:
                 pass
@@ -113,7 +119,7 @@ class ResearchAgent:
             
         return calls
 
-    def step(self) -> tuple[bool, str, list[dict]]:
+    def step(self) -> tuple[bool, str, list[dict[str, Any]]]:
         """
         Run one step of the agent loop.
         Returns: (is_done, agent_message, tool_calls)
@@ -128,10 +134,10 @@ class ResearchAgent:
         
         return is_done, response_text, tool_calls
         
-    def execute_tool(self, tool_call: dict) -> str:
+    def execute_tool(self, tool_call: dict[str, Any]) -> str:
         """Execute the tool and append result to history."""
         tool_name = tool_call.get("tool")
-        args = tool_call.get("args", {})
+        args: Dict[str, Any] = tool_call.get("args", {})
         
         is_blocked = False
         error_msg = ""
@@ -143,12 +149,12 @@ class ResearchAgent:
 
         # Check for highly similar vector searches
         elif tool_name == "vector_search":
-            query = args.get("query", "")
+            query: str = args.get("query", "")
             words1 = set(re.findall(r'\w+', query.lower()))
             if words1:
                 for past_call in self.call_history:
                     if past_call.get("tool") == "vector_search":
-                        past_query = past_call.get("args", {}).get("query", "")
+                        past_query: str = past_call.get("args", {}).get("query", "")
                         words2 = set(re.findall(r'\w+', past_query.lower()))
                         if words2:
                             overlap = len(words1.intersection(words2))
@@ -160,7 +166,7 @@ class ResearchAgent:
                                 break
 
         if is_blocked:
-            self.consecutive_blocks = getattr(self, "consecutive_blocks", 0) + 1
+            self.consecutive_blocks += 1
             if self.consecutive_blocks >= 3:
                 fatal_msg = f"[SYSTEM FATAL]: {error_msg} You have repeatedly ignored system blocks. Your search capabilities are now DISABLED. You MUST immediately write your final synthesis based on the information you have and output 'TASK_COMPLETE'."
                 self.history.append({"role": "user", "content": fatal_msg})

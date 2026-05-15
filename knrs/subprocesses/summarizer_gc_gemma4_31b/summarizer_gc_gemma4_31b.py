@@ -1,17 +1,21 @@
+from __future__ import annotations
+
 import os
 import sys
 import json
 import signal
-
-# Suppress KeyboardInterrupt globally
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 import argparse
 import time
 import re
 import logging
 import threading
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union
+
+# Suppress KeyboardInterrupt globally
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+
 from google import genai
 from google.genai import types
 
@@ -40,7 +44,7 @@ logger = logging.getLogger("gc_gemma4_31b")
 
 # Noise filter for external libraries
 class NoiseFilter(logging.Filter):
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if "AFC is enabled" in msg: return False
         if "HTTP Request" in msg and "200 OK" in msg: return False
@@ -51,14 +55,14 @@ for handler in logging.root.handlers:
 
 # Constants
 VERSION = "0.1.0"
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG: Dict[str, Any] = {
     "chunk_size": 200000,
     "model_name": "gemma-4-31b-it",
     "api_key": "",
     "rate_blocked_until": ""
 }
 
-def get_platform_config():
+def get_platform_config() -> Dict[str, Any]:
     # Local specialized config loader since it modifies the config too
     config_file = os.path.expanduser("~/.config/knrs/summarizer_config_gc_gemma4_31b.json")
     try:
@@ -79,7 +83,7 @@ def get_platform_config():
 
     return DEFAULT_CONFIG.copy()
 
-def update_block_until(timestamp_str: str):
+def update_block_until(timestamp_str: str) -> None:
     config_path = os.path.expanduser("~/.config/knrs/summarizer_config_gc_gemma4_31b.json")
     try:
         config = get_platform_config()
@@ -96,7 +100,7 @@ def update_block_until(timestamp_str: str):
     except Exception as e:
         logger.error(f"Failed to update config file: {e}")
 
-def check_rate_limit():
+def check_rate_limit() -> None:
     while True:
         config = get_platform_config()
         blocked_until_str = config.get("rate_blocked_until", "")
@@ -114,7 +118,7 @@ def check_rate_limit():
             pass
         break
 
-def parse_retry_delay(exception):
+def parse_retry_delay(exception: Exception) -> Optional[float]:
     try:
         if hasattr(exception, "details") and exception.details:
             for detail in exception.details:
@@ -128,14 +132,14 @@ def parse_retry_delay(exception):
     return None
 
 class GemmaEngine(BaseEngine):
-    def __init__(self, api_key: str, model_name: str):
+    def __init__(self, api_key: str, model_name: str) -> None:
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
-        self.last_request_time = 0
-        self.min_delay = 4.1
-        self.backoff = 10
+        self.last_request_time: float = 0
+        self.min_delay: float = 4.1
+        self.backoff: float = 10
 
-    def generate(self, prompt: str, max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+    def generate(self, prompt: Union[str, List[Dict[str, str]]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         attempts = 0
         max_attempts = 10
 
@@ -164,10 +168,10 @@ class GemmaEngine(BaseEngine):
                 msg = str(e).lower()
                 if "rate limit" in msg or ("quota" in msg and "daily" in msg):  
                     logger.error("Daily API Quota reached.")
-                    from datetime import timedelta
                     tomorrow = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0) + timedelta(days=1)
                     update_block_until(tomorrow.isoformat())
                     sys.exit(10)
+                
                 status_code = getattr(e, 'code', None) or getattr(e, 'status_code', None)
                 if "429" in msg or "resource_exhausted" in msg or "rate limit" in msg or status_code == 429:
                     delay = parse_retry_delay(e) or self.backoff
@@ -190,10 +194,10 @@ class GemmaEngine(BaseEngine):
                 raise e
         raise Exception("Max retry attempts reached.")
 
-def summarize_file(source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
-    api_key = config.get("api_key")
-    chunk_size = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
-    model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
+def summarize_file(source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
+    api_key: str = config.get("api_key", "")
+    chunk_size: int = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
+    model_name: str = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
     if not api_key:
         logger.error("No api_key found in platform config.")
@@ -211,7 +215,7 @@ def summarize_file(source_file: str, destination_file: str, config: dict, summar
     engine = GemmaEngine(api_key, model_name)
     summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, doc_hash, final_sum_tokens=summary_max_tokens)
     
-    sum_metadata = {}
+    sum_metadata: Dict[str, Any] = {}
     if metadata:
         for key in ['title', 'authors', 'tags', 'uuid']:
             if key in metadata: sum_metadata[key] = metadata[key]
@@ -229,9 +233,9 @@ def summarize_file(source_file: str, destination_file: str, config: dict, summar
     os.replace(temp_file, destination_file)
     logger.info(f"Successfully wrote summary: {destination_file}")
 
-def answer_query(query: str, source_file: str, destination_file: str, config: dict, summary_max_tokens: int):
-    api_key = config.get("api_key")
-    model_name = config.get("model_name", DEFAULT_CONFIG["model_name"])
+def answer_query(query: str, source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
+    api_key: str = config.get("api_key", "")
+    model_name: str = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
     if not api_key:
         logger.error("No api_key found in platform config.")
@@ -249,7 +253,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
         
-        prompt = prompt_text
+        prompt: Union[str, List[Dict[str, str]]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted:
@@ -270,7 +274,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         logger.exception(f"Error during Q&A: {e}")
         sys.exit(1)
 
-def main():
+def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
@@ -283,7 +287,7 @@ def main():
     args = parser.parse_args()
     
     if args.capabilities:
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "summarizer_gc_gemma4_31b",
             "type": "summarizer",
             "config_file": "summarizer_config_gc_gemma4_31b.json",

@@ -1,13 +1,4 @@
-"""
-agent_hf — HuggingFace Transformers agent backend.
-
-Persistent subprocess that loads a generative/chat model once and
-serves multi-turn conversation requests via stdin/stdout JSON-line protocol.
-
-Usage:
-    python agent_hf.py                     # persistent mode (stdin/stdout)
-    python agent_hf.py --capabilities      # print capabilities JSON and exit
-"""
+from __future__ import annotations
 
 import json
 import signal
@@ -15,6 +6,7 @@ import sys
 import logging
 import threading
 import os
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 # Prevent fragmentation and XPU allocation crashes during model load
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -40,7 +32,7 @@ logger = logging.getLogger("agent_hf")
 
 # Noise filter for external libraries
 class NoiseFilter(logging.Filter):
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if "AFC is enabled" in msg:
             return False
@@ -62,8 +54,6 @@ logging.getLogger("transformers").setLevel(logging.ERROR)
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 from agent_core.protocol import read_request, write_response, write_error
-from typing import TypedDict
-
 from summarizer_core.utils import get_platform_config, watchdog, validate_config
 
 # ── Config schema ──────────────────────────────────────────────────────────────
@@ -78,7 +68,7 @@ class AgentHfConfig(TypedDict):
     default_temperature: float
     load_in_4bit: bool
 
-CONFIG_SCHEMA: dict[str, str] = {
+CONFIG_SCHEMA: Dict[str, str] = {
     "model_id": "str",
     "device": "str",
     "torch_dtype": "str",
@@ -111,15 +101,16 @@ class HFAgentEngine:
             return "mps"
         return "cpu"
 
-    def __init__(self, config: dict):
+    def __init__(self, config: Dict[str, Any]) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        model_id = config.get("model_id", DEFAULT_CONFIG["model_id"])
+        model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
         device = self._get_device(config.get("device", DEFAULT_CONFIG["device"]))
-        dtype_str = config.get("torch_dtype", DEFAULT_CONFIG["torch_dtype"])
+        dtype_str: str = config.get("torch_dtype", DEFAULT_CONFIG["torch_dtype"])
 
         # Resolve torch dtype
+        torch_dtype: Union[str, torch.dtype]
         if dtype_str == "auto":
             torch_dtype = "auto"
         elif hasattr(torch, dtype_str) and isinstance(getattr(torch, dtype_str), torch.dtype):
@@ -128,14 +119,14 @@ class HFAgentEngine:
             logger.warning(f"Invalid torch_dtype '{dtype_str}' in config. Falling back to 'auto'.")
             torch_dtype = "auto"
 
-        load_in_4bit = config.get("load_in_4bit", DEFAULT_CONFIG["load_in_4bit"])
+        load_in_4bit: bool = config.get("load_in_4bit", DEFAULT_CONFIG["load_in_4bit"])
 
         quantization_config = None
         if load_in_4bit:
             from transformers import BitsAndBytesConfig
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch_dtype if torch_dtype != "auto" else torch.float16,
+                bnb_4bit_compute_dtype=torch_dtype if isinstance(torch_dtype, torch.dtype) else torch.float16,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
             )
@@ -160,14 +151,14 @@ class HFAgentEngine:
 
     def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: List[Dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
         import torch
 
         # Normalize role names
-        normalized = []
+        normalized: List[Dict[str, str]] = []
         for m in messages:
             role = m["role"]
             if role == "model":
@@ -175,7 +166,7 @@ class HFAgentEngine:
             normalized.append({"role": role, "content": m["content"]})
 
         # Apply chat template
-        input_text = self.tokenizer.apply_chat_template(
+        input_text: str = self.tokenizer.apply_chat_template(
             normalized,
             tokenize=False,
             add_generation_prompt=True,
@@ -192,7 +183,7 @@ class HFAgentEngine:
 
         # Decode only the new tokens (skip the input)
         new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        response: str = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
         
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -202,7 +193,7 @@ class HFAgentEngine:
         return response.strip()
 
 
-def run_persistent(engine: HFAgentEngine):
+def run_persistent(engine: HFAgentEngine) -> None:
     """Main loop: read JSON requests from stdin, write responses to stdout."""
     sys.stdout.write("READY\n")
     sys.stdout.flush()
@@ -213,9 +204,9 @@ def run_persistent(engine: HFAgentEngine):
             logger.info("Stdin closed, shutting down.")
             break
 
-        messages = req.get("messages", [])
-        max_tokens = req.get("max_tokens", 10000)
-        temperature = req.get("temperature", 0.2)
+        messages: List[Dict[str, str]] = req.get("messages", [])
+        max_tokens: int = req.get("max_tokens", 10000)
+        temperature: float = req.get("temperature", 0.2)
 
         try:
             text = engine.chat(messages, max_tokens, temperature)
@@ -225,7 +216,7 @@ def run_persistent(engine: HFAgentEngine):
             write_error(str(e))
 
 
-def main():
+def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
     w.start()
 
@@ -237,7 +228,7 @@ def main():
 
     if args.capabilities:
         config = get_platform_config(CONFIG_FILE, DEFAULT_CONFIG)
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "agent_hf",
             "type": "agent",
             "config_file": CONFIG_FILE,

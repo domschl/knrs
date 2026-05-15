@@ -1,30 +1,12 @@
-"""
-embedder_hf — HuggingFace SentenceTransformer embedding subprocess.
-
-Two modes
----------
-One-shot (legacy / standalone):
-    python embedder_hf.py input.json output.npy
-
-Server (persistent, used by KnrsIndexer):
-    python embedder_hf.py --server
-
-In server mode the model is loaded once.  The parent process communicates
-over stdin/stdout using a simple line protocol:
-
-  stdin  ← "INPUT_PATH OUTPUT_PATH\\n"   (parent sends a batch)
-  stdout → "READY\\n"                    (after model load, once)
-  stdout → "DONE\\n"                     (after each batch)
-  stdout → "ERROR: <msg>\\n"             (on failure)
-
-The parent closes stdin to signal shutdown.
-"""
+from __future__ import annotations
 
 import json
 import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from huggingface_hub import snapshot_download
 
 # Must be set before PyTorch is imported so the CUDA allocator picks it up.
@@ -60,11 +42,11 @@ MODEL_NAME = "google/embeddinggemma-300m"
 # Gemma3 that accumulated across server-mode encode() calls → OOM.
 ENCODE_BATCH_SIZE = 32
 
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG: Dict[str, Any] = {
     "device": "auto"
 }
 
-def get_platform_config():
+def get_platform_config() -> Dict[str, Any]:
     config_file = os.path.expanduser("~/.config/knrs/embedder_config_hf.json")
     try:
         if os.path.exists(config_file):
@@ -99,9 +81,9 @@ def _get_device(config_device: str = "auto") -> str:
 def _load_model() -> SentenceTransformer:
     # Attempt to find the model in the local HuggingFace cache to avoid 
     # the delay caused by checking for updates online (ETag requests).
-    load_path = MODEL_NAME
+    load_path: str = MODEL_NAME
     try:
-        cached_path = snapshot_download(MODEL_NAME, local_files_only=True)
+        cached_path: str = snapshot_download(MODEL_NAME, local_files_only=True)
         if cached_path:
             logger.info("Found cached model at %s", cached_path)
             load_path = cached_path
@@ -120,12 +102,12 @@ def _load_model() -> SentenceTransformer:
 
 def _embed(model: SentenceTransformer, input_path: Path, output_path: Path, mode: str = "document") -> None:
     with input_path.open("r", encoding="utf-8") as f:
-        texts = json.load(f)
+        texts: List[str] = json.load(f)
     if not texts:
         np.save(str(output_path), np.array([], dtype=np.float32))
         return
     
-    encode_kwargs = {
+    encode_kwargs: Dict[str, Any] = {
         "batch_size": ENCODE_BATCH_SIZE,
         "show_progress_bar": False,   # parent's rich bar covers overall progress
         "convert_to_numpy": True,
@@ -181,7 +163,7 @@ def one_shot_mode(mode: str, input_path: Path, output_path: Path) -> None:
 
 def main() -> None:
     if len(sys.argv) == 2 and sys.argv[1] == "--capabilities":
-        cap = {
+        cap: Dict[str, Any] = {
             "name": "embedder_hf",
             "type": "embedder",
             "config_file": "embedder_config_hf.json",
