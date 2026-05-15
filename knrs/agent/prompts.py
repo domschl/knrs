@@ -48,6 +48,14 @@ You have access to the following tools:
    Move or rename a file or directory strictly within AINotes/Research/. Both src and dst must be within AINotes/Research/.
    Example: {"tool": "file_move", "args": {"src": "RomanLaw.md", "dst": "RomanLaw/RomanLaw.md"}}
 
+9. `wikipedia_search(query)`
+   Search Wikipedia for an article title. Returns the top 10 matching article titles and a brief snippet.
+   Example: {"tool": "wikipedia_search", "args": {"query": "Bavarian Illuminati"}}
+
+10. `wikipedia_fetch(title)`
+    Download a full Wikipedia article in plain text and automatically save it to AINotes/Research/Wikipedia/. Returns a preview and the local file path so you can read it in detail using `file_read`.
+    Example: {"tool": "wikipedia_fetch", "args": {"title": "Illuminati"}}
+
 YOUR WORKFLOW:
 You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
 
