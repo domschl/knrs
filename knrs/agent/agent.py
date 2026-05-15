@@ -45,6 +45,10 @@ class ResearchAgent:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.history, f, indent=2)
 
+    def get_context_size(self) -> int:
+        """Return the approximate context size in characters."""
+        return len(json.dumps(self.history))
+
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
         """Find all JSON blocks containing 'tool' and 'args'."""
         calls: List[Dict[str, Any]] = []
