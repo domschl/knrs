@@ -245,18 +245,42 @@ class AgentTools:
         except Exception as e:
             return f"Error querying timelines: {e}"
 
+    def _sanitize_write_path(self, path: str) -> Path:
+        """Sanitize a path string to ensure it safely resolves within research_root."""
+        # Remove redundant prefix
+        if path.startswith("AINotes/Research/"):
+            path = path[len("AINotes/Research/"):]
+            
+        # Strip logical prefixes the agent might mistakenly include
+        if path.startswith("books:"):
+            path = path[len("books:"):]
+        elif path.startswith("wiki:"):
+            path = path[len("wiki:"):]
+            
+        # Strip absolute prefix if agent passes e.g., /home/.../AINotes/Research/...
+        # By removing the root slash, Path(path) will treat it as relative.
+        while path.startswith("/"):
+            path = path[1:]
+            
+        # Replace colon which might cause issues
+        path = path.replace(":", "_")
+        
+        p = Path(path)
+        # If it tries to navigate up, flatten to just its name
+        if ".." in p.parts:
+            p = Path(p.name)
+            
+        if not p.name or p.name == ".":
+            p = Path("unnamed_research_file.md")
+            
+        return self.research_root / p
+
     def file_write(self, path: str, content: str) -> str:
         """Write content to a file in AINotes/Research/."""
         try:
             from knrs.calibre.converter import atomic_write
             
-            # Remove redundant AINotes/Research/ prefix if agent included it
-            if path.startswith("AINotes/Research/"):
-                path = path[len("AINotes/Research/"):]
-            
-            p = Path(path)
-            if not p.is_absolute():
-                p = self.research_root / p
+            p = self._sanitize_write_path(path)
                 
             if not self._is_safe_write_path(p):
                 return f"Error: Cannot write outside {self.research_root}"
@@ -269,13 +293,7 @@ class AgentTools:
     def file_append(self, path: str, content: str) -> str:
         """Append content to a file in AINotes/Research/."""
         try:
-            # Remove redundant AINotes/Research/ prefix if agent included it
-            if path.startswith("AINotes/Research/"):
-                path = path[len("AINotes/Research/"):]
-            
-            p = Path(path)
-            if not p.is_absolute():
-                p = self.research_root / p
+            p = self._sanitize_write_path(path)
                 
             if not self._is_safe_write_path(p):
                 return f"Error: Cannot write outside {self.research_root}"
@@ -292,13 +310,7 @@ class AgentTools:
     def create_directory(self, path: str) -> str:
         """Create a directory in AINotes/Research/."""
         try:
-            # Remove redundant AINotes/Research/ prefix if agent included it
-            if path.startswith("AINotes/Research/"):
-                path = path[len("AINotes/Research/"):]
-                
-            p = Path(path)
-            if not p.is_absolute():
-                p = self.research_root / p
+            p = self._sanitize_write_path(path)
                 
             if not self._is_safe_write_path(p):
                 return f"Error: Cannot create directory outside {self.research_root}"
@@ -313,19 +325,8 @@ class AgentTools:
         try:
             import shutil
 
-            # Remove redundant AINotes/Research/ prefix if agent included it
-            if src.startswith("AINotes/Research/"):
-                src = src[len("AINotes/Research/"):]
-            if dst.startswith("AINotes/Research/"):
-                dst = dst[len("AINotes/Research/"):]
-                
-            p_src = Path(src)
-            if not p_src.is_absolute():
-                p_src = self.research_root / p_src
-            
-            p_dst = Path(dst)
-            if not p_dst.is_absolute():
-                p_dst = self.research_root / p_dst
+            p_src = self._sanitize_write_path(src)
+            p_dst = self._sanitize_write_path(dst)
                 
             if not self._is_safe_write_path(p_src):
                 return f"Error: Cannot move source from outside {self.research_root}"
