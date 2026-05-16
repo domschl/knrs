@@ -228,8 +228,11 @@ class AgentTools:
         """Query timeline database and return formatted table."""
         try:
             from knrs.timelines.extractor import query_timeline_data, format_timeline_as_markdown_table
-            timeline_file = self.config.knrs_data / "timelines.json"
+            timeline_file = self.config.timelines / "timelines.json"
             
+            if isinstance(keywords, str):
+                keywords = [keywords]
+                
             events = query_timeline_data(timeline_file, start_year, end_year, context_filters, keywords)
             if not events:
                 return "No timeline events matched the criteria."

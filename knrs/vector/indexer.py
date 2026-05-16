@@ -151,15 +151,18 @@ class KnrsIndexer:
 
     def _save_state(self, embeddings: np.ndarray, meta: dict) -> None:
         """Atomically save the index and metadata."""
-        # Save embeddings
         tmp_npy = str(self.index_file) + ".tmp.npy"
-        np.save(tmp_npy, embeddings)
-        os.replace(tmp_npy, str(self.index_file))
-        
-        # Save metadata atomically
         tmp_json = str(self.meta_file) + ".tmp"
+        
+        # 1. Write both temporary files first.
+        np.save(tmp_npy, embeddings)
         with open(tmp_json, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
+            
+        # 2. Only if both writes succeeded, perform the atomic replaces.
+        # This minimizes the window where the database could be inconsistent
+        # (e.g. if writing the metadata fails due to disk space).
+        os.replace(tmp_npy, str(self.index_file))
         os.replace(tmp_json, str(self.meta_file))
 
     # ------------------------------------------------------------------ #
