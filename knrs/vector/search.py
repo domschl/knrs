@@ -207,10 +207,19 @@ class KnrsSearcher:
     def _load(self) -> None:
         if self.embeddings is None:
             if not self.index_file.exists():
-                raise FileNotFoundError("Vector index not found. Run indexer first.")
-            self.embeddings = np.load(self.index_file)
-            with self.meta_file.open('r', encoding='utf-8') as f:
-                self.metadata = json.load(f)
+                raise FileNotFoundError("Vector index (index.npy) not found. Run indexer first.")
+            if not self.meta_file.exists():
+                raise FileNotFoundError("Vector metadata (index.json) not found. Run indexer first.")
+                
+            if self.meta_file.stat().st_size == 0:
+                raise RuntimeError("Vector metadata file (index.json) is empty/corrupted. Please run indexer to rebuild.")
+
+            try:
+                self.embeddings = np.load(self.index_file)
+                with self.meta_file.open('r', encoding='utf-8') as f:
+                    self.metadata = json.load(f)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load vector index: {e}. Please run indexer to rebuild.")
 
     def search(self, query: str, top_k: int = 5) -> List[SearchResult]:
         """Perform a semantic search for the given query."""

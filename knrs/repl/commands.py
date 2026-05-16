@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from knrs.config import KnrsConfig
+from knrs.utils.syncthing import get_syncthing_status
 
 if TYPE_CHECKING:
     from knrs.repl.backends import BackendManager
@@ -62,6 +63,18 @@ def init_git_state(cfg: KnrsConfig) -> None:
     if not GIT_STATE["wiki_path_safe_remote"] and GIT_STATE["wiki_path_safe_local"]:
         console.print(f"[yellow]Warning: {cfg.wiki_path} remote is not up-to-date. Vector index updates will be blocked.[/yellow]")
 
+    # Syncthing check
+    console.print("[dim]Checking Syncthing status...[/dim]")
+    for label, path in [("Calibre", cfg.calibre_path), ("KnrsData", cfg.knrs_data), ("Wiki", cfg.wiki_path), ("VectorDB", cfg.vector_db)]:
+        status = get_syncthing_status(path)
+        if status:
+            if status.get("error"):
+                console.print(f"[yellow]Syncthing ({label}): {status['error']}[/yellow]")
+            elif not status.get("in_sync"):
+                console.print(f"[bold yellow]Warning: Syncthing folder '{label}' is not in sync ({status.get('state')}).[/bold yellow]")
+                if status.get("need_bytes", 0) > 0:
+                    console.print(f"  [dim]Needs {status['need_bytes']} bytes to reach sync.[/dim]")
+
     GIT_STATE["checked"] = True
 
 def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
@@ -83,6 +96,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     table.add_row(r"/research <topic> \[--resume]", "Run research agent on the given topic. Use --resume to continue the last session.")
     table.add_row("/research-list", "List past research sessions")
     table.add_row("/config", "Show current configuration")
+    table.add_row("/sync-status", "Check Syncthing synchronization status for all paths")
     table.add_row("/backends", "List available backends for the current platform")
     table.add_row("/models <backend>", "List available and validated models for a specific backend")
     table.add_row("/set-backend <type> <backend>", "Set the active backend for a given type (e.g., summarizer, embedder)")
@@ -804,6 +818,46 @@ def cmd_research(args: list[str], cfg: KnrsConfig) -> None:
     except RuntimeError as e:
         console.print(f"[red]Agent backend error: {e}[/red]")
 
+def cmd_syncthing_status(args: list[str], cfg: KnrsConfig):
+    """Check Syncthing status for all relevant paths."""
+    table = Table(title="Syncthing Sync Status")
+    table.add_column("Folder", style="cyan")
+    table.add_column("ID", style="dim")
+    table.add_column("State", justify="center")
+    table.add_column("In Sync", justify="center")
+    table.add_column("Details")
+
+    paths = [
+        ("Calibre Library", cfg.calibre_path),
+        ("KnrsData", cfg.knrs_data),
+        ("Wiki/Notes", cfg.notes_path),
+        ("Wiki Root", cfg.wiki_path),
+        ("VectorDB", cfg.vector_db),
+    ]
+
+    found_any = False
+    for label, path in paths:
+        status = get_syncthing_status(path)
+        if status:
+            found_any = True
+            f_id = status.get("folder_id", "Unknown")
+            state = status.get("state", "Unknown")
+            in_sync = "[green]✓[/green]" if status.get("in_sync") else "[red]✗[/red]"
+            
+            error = status.get("error", "")
+            if error:
+                table.add_row(label, f_id, "[red]Error[/red]", "✗", error)
+            else:
+                details = ""
+                if status.get("need_bytes", 0) > 0:
+                    details = f"{status['need_bytes']} bytes needed"
+                table.add_row(label, f_id, state, in_sync, details)
+
+    if found_any:
+        console.print(table)
+    else:
+        console.print("[yellow]No Syncthing folders detected for the current configuration.[/yellow]")
+
 def cmd_research_list(args: list[str], cfg: KnrsConfig):
     research_dir = cfg.wiki_path / "AINotes" / "Research"
     if not research_dir.exists():
@@ -845,4 +899,5 @@ COMMANDS = {
     "/set-param": cmd_set_param,
     "/research": cmd_research,
     "/research-list": cmd_research_list,
+    "/sync-status": cmd_syncthing_status,
 }
