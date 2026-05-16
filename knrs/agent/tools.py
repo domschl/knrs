@@ -42,6 +42,10 @@ class AgentTools:
             return self.config.markdown_books / path_str.split(":", 1)[1]
         elif path_str.startswith("wiki:"):
             return self.config.wiki_path / path_str.split(":", 1)[1]
+        elif path_str == "books":
+            return self.config.markdown_books
+        elif path_str == "wiki":
+            return self.config.wiki_path
             
         p = Path(path_str)
         if not p.is_absolute():
