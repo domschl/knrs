@@ -222,19 +222,22 @@ class ResearchAgent:
                             overlap = len(words1.intersection(words2))
                             smaller_len = min(len(words1), len(words2))
                             # If 80% of words overlap and length difference is small
-                            if smaller_len > 0 and (overlap / smaller_len) >= 0.8 and abs(len(words1) - len(words2)) <= 2:
-                                is_blocked = True
-                                error_msg = f"Search blocked. Query '{query}' is too similar to past query '{past_query}'."
-                                break
+                            if smaller_len > 0 and (overlap / smaller_len) >= 0.8 and abs(len(words1) - len(words2)) <= 1:
+                                if self.consecutive_blocks < 3:
+                                    self.consecutive_blocks += 1
+                                else:
+                                    is_blocked = True
+                                    error_msg = f"Search blocked. Query '{query}' is too similar to past query '{past_query}'."
+                                    break
 
         if is_blocked:
             self.consecutive_blocks += 1
-            if self.consecutive_blocks >= 3:
+            if self.consecutive_blocks >= 6:
                 fatal_msg = f"[SYSTEM FATAL]: {error_msg} You have repeatedly ignored system blocks. Your search capabilities are now DISABLED. You MUST immediately use the 'file_write' tool to save your final synthesized research to a markdown document, and only then output 'TASK_COMPLETE'."
                 self.history.append({"role": "user", "content": fatal_msg})
                 return fatal_msg
-            else:
-                block_msg = f"[SYSTEM BLOCK {self.consecutive_blocks}/3]: {error_msg} You MUST use fundamentally different keywords, or if you have enough information, use the 'file_write' tool to save your research to a markdown document before outputting 'TASK_COMPLETE'."
+            elif self.consecutive_blocks >= 3:
+                block_msg = f"[SYSTEM BLOCK {self.consecutive_blocks}/3]: {error_msg} You MUST use fundamentally different keywords for new searches, please continue research with the previous search results, or if you have enough information, use the 'file_write' tool to save your research to a markdown document before outputting 'TASK_COMPLETE'."
                 self.history.append({"role": "user", "content": block_msg})
                 return block_msg
                                 
