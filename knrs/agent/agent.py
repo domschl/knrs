@@ -205,7 +205,7 @@ class ResearchAgent:
         error_msg = ""
         
         # Check for exact repetition
-        if tool_call in self.call_history:
+        if tool_name != "file_list" and tool_call in self.call_history:
             is_blocked = True
             error_msg = f"You have already executed `{tool_name}` with these exact arguments."
 
