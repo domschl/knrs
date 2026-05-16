@@ -5,7 +5,7 @@ import signal
 import sys
 import logging
 import threading
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, TypedDict
 
 # Setup logging (to stderr so stdout stays clean for protocol)
 from rich.logging import RichHandler
@@ -55,17 +55,17 @@ CONFIG_FILE = "agent_config_macos.json"
 
 class AgentMacosConfig(TypedDict):
     model_id: str
-    kv_bits: float
-    kv_quant_scheme: str
+    kv_bits: float | None
+    kv_quant_scheme: str | None
     default_max_tokens: int
     default_temperature: float
 
 CONFIG_SCHEMA: Dict[str, str] = {
     "model_id": "str",
-    "kv_bits": "float",
-    "kv_quant_scheme": "str",
-    "default_max_tokens": "int",
-    "default_temperature": "float",
+    "kv_bits": "float?",
+    "kv_quant_scheme": "str?",
+    "default_max_tokens": "int?",
+    "default_temperature": "float?",
 }
 
 DEFAULT_CONFIG: AgentMacosConfig = {
@@ -76,12 +76,21 @@ DEFAULT_CONFIG: AgentMacosConfig = {
     "default_temperature": 0.2,
 }
 
+DEFAULT_CONFIG_ALT: AgentMacosConfig = {
+    "model_id": "mlx-community/Qwen3.6-35B-A3B-4bit",
+    "kv_bits": 4.0,
+    "kv_quant_scheme": None,
+    "default_max_tokens": 10000,
+    "default_temperature": 0.2,
+}
 
 class MLXAgentEngine:
     def __init__(self, config: Dict[str, Any]) -> None:
         model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
-        self.kv_bits: float = config.get("kv_bits", DEFAULT_CONFIG["kv_bits"])
-        self.kv_quant_scheme: str = config.get("kv_quant_scheme", DEFAULT_CONFIG["kv_quant_scheme"])
+        self.kv_bits: float | None = config.get("kv_bits", DEFAULT_CONFIG["kv_bits"])
+        self.kv_quant_scheme: str | None = config.get("kv_quant_scheme", None)
+        if self.kv_quant_scheme == "normal":
+            self.kv_quant_scheme = None
 
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)

@@ -17,6 +17,7 @@ def validate_config(cfg: Dict[str, Any], schema: Dict[str, str]) -> List[str]:
         cfg:    The loaded config dictionary.
         schema: Maps key names to expected Python type names, e.g.
                 {"model_name": "str", "chunk_size": "int", "temperature": "float"}.
+                Append '?' to the type name to mark a key as optional.
 
     Returns:
         A list of error strings (empty = valid).
@@ -25,19 +26,27 @@ def validate_config(cfg: Dict[str, Any], schema: Dict[str, str]) -> List[str]:
     type_map: Dict[str, Type[Any]] = {"str": str, "int": int, "float": float, "bool": bool}
 
     for key, type_name in schema.items():
+        is_optional = type_name.endswith("?")
+        base_type = type_name[:-1] if is_optional else type_name
+
         if key not in cfg:
-            errors.append(f"Missing required config key: '{key}'")
+            if not is_optional:
+                errors.append(f"Missing required config key: '{key}'")
             continue
-        expected = type_map.get(type_name)
+
+        expected = type_map.get(base_type)
         if expected is None:
             continue  # Unknown type — skip validation
         val = cfg[key]
+        # Allow None for optional keys
+        if val is None and is_optional:
+            continue
         # Allow int where float is expected (JSON numbers are always int or float)
-        if expected is float and isinstance(val, int):
+        if expected is float and isinstance(val, (int, float)):
             continue
         if not isinstance(val, expected):
             errors.append(
-                f"Config key '{key}': expected {type_name}, got {type(val).__name__!r} (value: {val!r})"
+                f"Config key '{key}': expected {base_type}, got {type(val).__name__!r} (value: {val!r})"
             )
     return errors
 
