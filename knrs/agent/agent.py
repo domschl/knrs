@@ -50,9 +50,10 @@ class ResearchAgent:
         return len(json.dumps(self.history))
 
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
-        """Find all JSON blocks containing 'tool' and 'args'."""
+        """Find and repair JSON blocks containing 'tool' and 'args'."""
         calls: List[Dict[str, Any]] = []
-        # First check for Gemma native tool call format
+        
+        # 1. Native format check (high confidence)
         gemma_matches = re.finditer(r'<\|tool_call>call:(\w+)(\{.*?\})<tool_call\|>', text)
         for gemma_match in gemma_matches:
             tool_name = gemma_match.group(1)
@@ -65,120 +66,88 @@ class ResearchAgent:
             except Exception:
                 pass
 
-        # Pre-process the text to escape unescaped quotes in any "content" fields
-        # This prevents the in_string state machine from breaking on raw quotes.
-        # Find all occurrences of "content": "..."
-        # We look for "content" followed by a colon and a quote. Then we match non-greedily
-        # up to the LAST quote before a closing brace or a comma.
-        # Since content is usually the last field, it often ends with "\n  }\n}"
-        def escape_content_quotes(text_to_clean: str) -> str:
-            # A robust regex that finds the content block
-            pattern = re.compile(r'("content"\s*:\s*")(.*?)("\s*\}(?:\s*\})?|\s*,)', re.DOTALL)
-            offset = 0
-            result = []
-            for match in pattern.finditer(text_to_clean):
-                result.append(text_to_clean[offset:match.start(2)])
-                
-                # Escape quotes inside the content group
-                inner = match.group(2)
-                # First unescape to avoid double escaping, then escape
-                inner = inner.replace('\\"', '"').replace('"', '\\"')
-                result.append(inner)
-                
-                result.append(match.group(3))
-                offset = match.end()
-            result.append(text_to_clean[offset:])
-            return "".join(result)
-            
-        text = escape_content_quotes(text)
+        # 2. Aggressive search for JSON-like blocks
+        # We look for anything that starts with {"tool" or similar
+        potential_blocks = []
         
-        # Look for code blocks first
-        matches = re.finditer(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
-        for match in matches:
-            try:
-                # Clean literal newlines inside strings just in case
-                block_text = match.group(1)
-                parsed = json.loads(block_text)
-                if isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
-                    calls.append(parsed)
-            except Exception:
-                pass
-                
-        if calls:
-            return calls
+        # Look for markdown code blocks
+        blocks = re.finditer(r'```(?:json)?\s*(.*?)(?:```|$)', text, re.DOTALL)
+        for b in blocks:
+            content = b.group(1).strip()
+            if content.startswith('{') and '"tool"' in content:
+                potential_blocks.append(content)
+        
+        # Also look for raw JSON outside blocks if nothing found yet
+        if not potential_blocks:
+            # Match from the first '{' that seems to be a tool call to the end of the text
+            # This handles cases where the agent forgets the closing ``` or trailing braces
+            matches = re.finditer(r'\{\s*"tool"\s*:\s*"[^"]+".*?\}', text, re.DOTALL)
+            for m in matches:
+                potential_blocks.append(m.group(0))
+            
+            # If still nothing, look for start of JSON and take until end
+            if not potential_blocks:
+                start = text.find('{"tool"')
+                if start == -1:
+                    start = text.find('{\n  "tool"')
+                if start != -1:
+                    potential_blocks.append(text[start:])
 
-        # Fallback: scan for '{' and try to parse JSON by matching braces
-        start_idx = 0
-        while True:
-            start_idx = text.find('{', start_idx)
-            if start_idx == -1:
-                break
+        def try_parse(raw: str) -> Optional[Dict[str, Any]]:
+            # Try direct JSON
+            try:
+                p = json.loads(raw)
+                if isinstance(p, dict) and "tool" in p: return p
+            except Exception: pass
             
-            brace_count = 0
-            in_string = False
-            escape = False
-            end_idx = -1
-            cleaned_chars = []
-            
-            for i in range(start_idx, len(text)):
-                c = text[i]
-                if escape:
-                    escape = False
-                    cleaned_chars.append(c)
-                elif c == '\\':
-                    escape = True
-                    cleaned_chars.append(c)
-                elif c == '"':
-                    in_string = not in_string
-                    cleaned_chars.append(c)
-                elif in_string:
-                    if c == '\n':
-                        cleaned_chars.append('\\n')
-                    elif c == '\r':
-                        cleaned_chars.append('\\r')
-                    elif c == '\t':
-                        cleaned_chars.append('\\t')
-                    else:
-                        cleaned_chars.append(c)
-                else:
-                    cleaned_chars.append(c)
-                    if c == '{':
-                        brace_count += 1
-                    elif c == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            end_idx = i
-                            break
-                            
-            raw_json = "".join(cleaned_chars)
-            
-            parsed = None
-            for extra_braces in range(4):
-                attempt = raw_json + ("}" * extra_braces)
+            # Try to repair trailing braces
+            for i in range(1, 5):
                 try:
-                    parsed = json.loads(attempt)
-                    break
-                except Exception:
-                    pass
-                    
-            # Fallback to YAML which is more forgiving with quotes and multiline
-            if not parsed:
-                import yaml
-                for extra_braces in range(4):
-                    attempt = raw_json + ("}" * extra_braces)
-                    try:
-                        parsed = yaml.safe_load(attempt)
-                        if isinstance(parsed, dict) and "tool" in parsed:
-                            break
-                    except Exception:
-                        parsed = None
-                        
-            if parsed and isinstance(parsed, dict) and "tool" in parsed and "args" in parsed:
-                if parsed not in calls:
-                    calls.append(parsed)
+                    p = json.loads(raw + ("}" * i))
+                    if isinstance(p, dict) and "tool" in p: return p
+                except Exception: pass
+
+            # Try to repair trailing quote + braces
+            for i in range(1, 5):
+                try:
+                    p = json.loads(raw + '"' + ("}" * i))
+                    if isinstance(p, dict) and "tool" in p: return p
+                except Exception: pass
+
+            # Try YAML fallback (much more forgiving with strings/newlines)
+            import yaml
+            try:
+                p = yaml.safe_load(raw)
+                if isinstance(p, dict) and "tool" in p: return p
+            except Exception: pass
             
-            start_idx += 1
-            
+            # Last ditch: try to escape unescaped internal quotes in "content"
+            # This is specifically for file_write
+            if '"content"' in raw:
+                try:
+                    # Find content field start
+                    c_start = raw.find('"content"')
+                    v_start = raw.find('"', c_start + 9)
+                    if v_start != -1:
+                        # Find the last " before a closing brace
+                        v_end = raw.rfind('}', v_start)
+                        v_end = raw.rfind('"', v_start, v_end)
+                        if v_end != -1:
+                            prefix = raw[:v_start+1]
+                            middle = raw[v_start+1:v_end]
+                            suffix = raw[v_end:]
+                            repaired = prefix + middle.replace('"', '\\"') + suffix
+                            p = json.loads(repaired)
+                            if isinstance(p, dict) and "tool" in p: return p
+                except Exception: pass
+                
+            return None
+
+        for block in potential_blocks:
+            parsed = try_parse(block)
+            if parsed and parsed not in calls:
+                calls.append(parsed)
+                
         return calls
 
     def step(self) -> tuple[bool, str, list[dict[str, Any]]]:
@@ -191,9 +160,20 @@ class ResearchAgent:
         
         tool_calls = self._extract_tool_call(response_text)
         
-        # Only mark as done if there's no tool call to execute
-        is_done = ("TASK_COMPLETE" in response_text.upper() or "TASK COMPLETE" in response_text.upper()) and not tool_calls
+        # TASK_COMPLETE check
+        is_done_signal = "TASK_COMPLETE" in response_text.upper() or "TASK COMPLETE" in response_text.upper()
         
+        # If the agent says it's done but we found NO valid tool calls, 
+        # check if it *tried* to use a tool but we failed to parse it.
+        if is_done_signal and not tool_calls:
+            # Heuristic for failed tool call: contains {"tool": but no successful parse
+            if '{"tool"' in response_text or '{\n  "tool"' in response_text:
+                error_msg = "[SYSTEM ERROR]: It looks like you tried to use a tool, but the JSON format was invalid (e.g., missing closing braces or unescaped quotes). I could not execute the tool. Please REPEAT the tool call with correct, valid JSON, and DO NOT output 'TASK_COMPLETE' until the tool has successfully executed."
+                self.history.append({"role": "user", "content": error_msg})
+                # Prevent exit
+                return False, response_text + f"\n\n{error_msg}", []
+        
+        is_done = is_done_signal and not tool_calls
         return is_done, response_text, tool_calls
         
     def execute_tool(self, tool_call: dict[str, Any]) -> str:
@@ -225,6 +205,7 @@ class ResearchAgent:
                             if smaller_len > 0 and (overlap / smaller_len) >= 0.8 and abs(len(words1) - len(words2)) <= 1:
                                 if self.consecutive_blocks < 3:
                                     self.consecutive_blocks += 1
+                                    break
                                 else:
                                     is_blocked = True
                                     error_msg = f"Search blocked. Query '{query}' is too similar to past query '{past_query}'."

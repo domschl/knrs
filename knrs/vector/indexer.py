@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -119,16 +120,26 @@ class KnrsIndexer:
     def _load_state(self) -> tuple[np.ndarray, dict]:
         """Load existing index state; returns (embeddings, meta_dict)."""
         if self.index_file.exists() and self.meta_file.exists():
-            embeddings = np.load(str(self.index_file))
-            with self.meta_file.open("r", encoding="utf-8") as fh:
-                meta = json.load(fh)
-            # Back-compat: older indices had no file_hashes or chunk_size info
-            if "file_hashes" not in meta:
-                meta["file_hashes"] = {}
-            if "chunk_size" not in meta:
-                meta["chunk_size"] = self.config.vector_chunk_size
-                meta["overlap"] = self.config.vector_chunk_overlap
-            return embeddings, meta
+            try:
+                if self.meta_file.stat().st_size == 0:
+                    logger.warning("Index metadata file is empty. Treating as missing.")
+                    raise ValueError("Empty index.json")
+                
+                embeddings = np.load(str(self.index_file))
+                with self.meta_file.open("r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                # Back-compat: older indices had no file_hashes or chunk_size info
+                if "file_hashes" not in meta:
+                    meta["file_hashes"] = {}
+                if "chunk_size" not in meta:
+                    meta["chunk_size"] = self.config.vector_chunk_size
+                    meta["overlap"] = self.config.vector_chunk_overlap
+                return embeddings, meta
+            except Exception as e:
+                logger.warning("Failed to load existing index: %s. Re-indexing will be required.", e)
+                # If loading fails, we return empty state to trigger re-index
+                pass
+                
         return np.array([], dtype=np.float32), {
             "model": self.config.embedder_name,
             "chunk_size": self.config.vector_chunk_size,
@@ -139,9 +150,17 @@ class KnrsIndexer:
         }
 
     def _save_state(self, embeddings: np.ndarray, meta: dict) -> None:
-        np.save(str(self.index_file), embeddings)
-        with self.meta_file.open("w", encoding="utf-8") as fh:
+        """Atomically save the index and metadata."""
+        # Save embeddings
+        tmp_npy = str(self.index_file) + ".tmp.npy"
+        np.save(tmp_npy, embeddings)
+        os.replace(tmp_npy, str(self.index_file))
+        
+        # Save metadata atomically
+        tmp_json = str(self.meta_file) + ".tmp"
+        with open(tmp_json, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
+        os.replace(tmp_json, str(self.meta_file))
 
     # ------------------------------------------------------------------ #
     # Pruning                                                              #
