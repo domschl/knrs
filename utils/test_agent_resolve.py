@@ -84,6 +84,29 @@ def main():
         else:
             print(f"PASSED (resolved to {resolved})")
 
+    # 11. Test Wikipedia Local Cache Hit (Exact match)
+    print("\nTest 11: Wikipedia Local Cache Hit (Exact Case) -> ", end="")
+    wiki_wiki_dir = config.wiki_path / "AINotes" / "Research" / "Wikipedia"
+    wiki_wiki_dir.mkdir(parents=True, exist_ok=True)
+    cached_art = wiki_wiki_dir / "Dummy Wiki Article.md"
+    cached_art.write_text("---\ntitle: \"Dummy Wiki Article\"\nsource: \"Wikipedia\"\n---\n\n# Dummy Wiki Article\n\nDummy Article Content", encoding="utf-8")
+    
+    result = tools.wikipedia_fetch("Dummy Wiki Article")
+    if "Successfully loaded cached article" in result:
+        print("PASSED")
+    else:
+        print(f"FAILED (got result: {result})")
+        failed = True
+
+    # 12. Test Wikipedia Local Cache Hit (Case-insensitive match)
+    print("Test 12: Wikipedia Local Cache Hit (Case-insensitive) -> ", end="")
+    result_lower = tools.wikipedia_fetch("dummy wiki article")
+    if "Successfully loaded cached article" in result_lower:
+        print("PASSED")
+    else:
+        print(f"FAILED (got result: {result_lower})")
+        failed = True
+
     # Cleanup
     print("\nCleaning up temporary sandbox directory...")
     if test_temp_dir.exists():
