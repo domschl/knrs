@@ -75,12 +75,12 @@ class ResearchAgent:
         blocks = re.finditer(r'```(?:json)?\s*(.*?)(?:```|$)', text, re.DOTALL)
         for b in blocks:
             content = b.group(1).strip()
-            if content.startswith('{') and '"tool"' in content:
+            if content.startswith('{') or content.startswith('['):
                 potential_blocks.append(content)
 
         # Also look for raw JSON outside blocks if nothing found yet
         if not potential_blocks:
-            matches = re.finditer(r'\{\s*"tool"\s*:\s*"[^"]+?".*?\}', text, re.DOTALL)
+            matches = re.finditer(r'\{\s*"(?:tool|query)"\s*:\s*"[^"]+?".*?\}', text, re.DOTALL)
             for m in matches:
                 potential_blocks.append(m.group(0))
 
@@ -88,6 +88,12 @@ class ResearchAgent:
                 start = text.find('{"tool"')
                 if start == -1:
                     start = text.find('{\n  "tool"')
+                if start == -1:
+                    start = text.find('{"query"')
+                if start == -1:
+                    start = text.find('{\n  "query"')
+                if start == -1:
+                    start = text.find('[\n  {\n    "query"')
                 if start != -1:
                     potential_blocks.append(text[start:])
 
@@ -95,7 +101,12 @@ class ResearchAgent:
             # Try direct JSON
             try:
                 p = json.loads(raw)
-                if isinstance(p, dict) and "tool" in p: return p
+                if isinstance(p, dict):
+                    if "tool" in p: return p
+                    if "query" in p: return {"tool": "vector_search", "args": p}
+                if isinstance(p, list) and len(p) > 0 and isinstance(p[0], dict):
+                    if "tool" in p[0]: return p[0]
+                    if "query" in p[0]: return {"tool": "vector_search", "args": p[0]}
             except Exception: pass
 
             # Try to repair trailing braces
