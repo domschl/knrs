@@ -102,18 +102,18 @@ The file_write step is NOT optional. If you have gathered enough information to 
 
 ## Tool Call Format
 
-When you need to use a tool, output exactly ONE tool call per response as a single JSON object.
-Do NOT wrap it in a list. The JSON MUST include the `"tool"` key and the `"args"` dictionary.
+You must output exactly ONE tool call per response. The tool call MUST be a single JSON object.
 
+Example:
 ```json
 {
-  "tool": "tool_name",
+  "tool": "vector_search",
   "args": {
-    "arg1": "value1"
+    "query": "search keywords here"
   }
 }
 ```
-CRITICAL: Output at most one tool call per response. You MUST include the "tool" and "args" keys. Wait for the result before continuing.
+CRITICAL: Output at most one tool call per response. Wait for the result before continuing.
 
 ## Point of View
 
