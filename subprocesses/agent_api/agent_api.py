@@ -69,17 +69,17 @@ tools = [
         "type": "function",
         "function": {
             "name": "vector_search",
-            "description": "Semantic search across all indexed files in the local database.",
+            "description": "Search across all indexed files in the local database.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The search term or semantic query."
+                        "description": "The search phrase."
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Number of results to return (default is 5).",
+                        "description": "Number of research texts to return (default is 5).",
                         "default": 5
                     }
                 },
