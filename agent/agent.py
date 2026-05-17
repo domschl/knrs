@@ -261,6 +261,18 @@ class ResearchAgent:
         except Exception as e:
             result = f"Error executing {tool_name}: {e}"
 
+        # Print abbreviated tool result or error
+        res_str = str(result).strip()
+        if res_str.lower().startswith("error"):
+            c.print(f"    [bold red]  ✗ {res_str}[/bold red]")
+        else:
+            first_line = res_str.splitlines()[0] if res_str else ""
+            if len(first_line) > 100:
+                first_line = first_line[:100] + "..."
+            lines_count = len(res_str.splitlines())
+            suffix = f" ({lines_count} lines)" if lines_count > 1 else ""
+            c.print(f"    [bold green]  ✓[/bold green] [dim green]{first_line}{suffix}[/dim green]")
+
         # Track written files
         if tool_name in ("file_write", "file_append") and not str(result).startswith("Error"):
             path_str = args.get("path", "")
