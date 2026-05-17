@@ -79,28 +79,33 @@ def init_git_state(cfg: KnrsConfig) -> None:
 
 def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     """Show available commands."""
-    table = Table(title="Available Slash Commands")
+    console.print("[bold]knrs REPL[/bold] — Type your message to chat with the research agent.")
+    console.print("The agent can search, read files, write research, and more.\n")
+    
+    table = Table(title="Slash Commands")
     table.add_column("Command", style="cyan")
     table.add_column("Description")
     
-    table.add_row(r"/sync \[--force] \[--dry-run]", "Run full sync pipeline (calibre -> summaries -> wiki -> timeline -> index -> external-lib -> check-wiki)")
-    table.add_row(r"/sync-git \[commit-message]", "Add, commit, pull, and push changes in wiki and data repos, then unblock sync")
+    table.add_row("/reset", "Clear conversation history and start a new session")
+    table.add_row(r"/save-session \[name]", "Save current conversation to a checkpoint")
+    table.add_row(r"/load-session \[name]", "Load a saved conversation checkpoint")
+    table.add_row("/research-list", "List past research files in AINotes/Research")
+    table.add_row(r"/search <query> \[--raw] \[--highlight] \[--summarize]", "Direct VectorDB search (bypasses agent)")
+    table.add_row(r"/sync \[--force] \[--dry-run]", "Run full sync pipeline")
+    table.add_row(r"/sync-git \[commit-message]", "Git add, commit, pull, push in wiki and data repos")
     table.add_row(r"/sync-calibre \[--dry-run] \[--force]", "Sync Calibre library to MarkdownBooks")
     table.add_row(r"/sync-summaries \[--dry-run] \[--force]", "Sync MarkdownBooks to BookSummaries")
     table.add_row(r"/sync-wiki \[--force]", "Sync KnrsData to Wiki/AINotes")
     table.add_row(r"/sync-external-lib \[--dry-run]", "Sync Calibre EPUB/PDF to External Library")
-    table.add_row(r"/check-wiki \[--dry-run] \[--broken-links-to-italics] \[--force]", "Check and fix metadata consistency in Wiki")
-    table.add_row(r"/timeline \[--force] \[--from YYYY-MM-DD] \[--to YYYY-MM-DD] \[--context PAT] \[--raw] \[keywords]", "Extract and filter timelines; supports date ranges, context, and keyword search")
-    table.add_row(r"/index \[--force] \[--checkpoint-every-docs N] \[--checkpoint-every-chunks M]", "Update VectorDB index (MarkdownBooks + Wiki/Notes); --force re-embeds everything; default checkpoint: 50 files or 5000 chunks")
-    table.add_row(r"/search <query> \[--raw] \[--highlight] \[--summarize]", "Search VectorDB; --raw: output text without markdown formatting; --highlight: semantic significance highlighting; --summarize: generate AI summary answering the query")
-    table.add_row(r"/research <topic> \[--resume]", "Run research agent on the given topic. Use --resume to continue the last session.")
-    table.add_row("/research-list", "List past research sessions")
+    table.add_row(r"/check-wiki \[--dry-run] \[--broken-links-to-italics] \[--force]", "Check and fix Wiki metadata consistency")
+    table.add_row(r"/timeline \[--force] \[--from YYYY] \[--to YYYY] \[--context PAT] \[--raw] \[keywords]", "Extract and filter timelines")
+    table.add_row(r"/index \[--force]", "Update VectorDB index")
     table.add_row("/config", "Show current configuration")
-    table.add_row("/sync-status", "Check Syncthing synchronization status for all paths")
-    table.add_row("/backends", "List available backends for the current platform")
-    table.add_row("/models <backend>", "List available and validated models for a specific backend")
-    table.add_row("/set-backend <type> <backend>", "Set the active backend for a given type (e.g., summarizer, embedder)")
-    table.add_row("/set-param <backend|global> <key> <value>", "Set a configuration parameter for a specific backend, or global/shared config")
+    table.add_row("/sync-status", "Check Syncthing synchronization status")
+    table.add_row("/backends", "List available backends")
+    table.add_row("/models <backend>", "List models for a backend")
+    table.add_row("/set-backend <type> <backend>", "Set the active backend")
+    table.add_row("/set-param <backend|global> <key> <value>", "Set a configuration parameter")
     table.add_row("/exit", "Exit the REPL")
     
     console.print(table)
@@ -709,114 +714,59 @@ def cmd_set_param(args: list[str], cfg: KnrsConfig) -> None:
         console.print(f"[red]Failed to update {config_file}[/red]")
         console.print(f"[yellow]Tip: run the backend once to auto-create its config, or it will be created on next use.[/yellow]")
 
-def cmd_research(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_save_session(args: list[str], cfg: KnrsConfig) -> None:
+    """Save the current conversation session."""
+    from agent.context import save_session
+    from repl.repl import _get_current_state
+    
+    state = _get_current_state()
+    if state is None:
+        console.print("[red]No active agent session to save.[/red]")
+        return
+    
+    name = args[0] if args else "default"
+    safe_name = "".join(c for c in name if c.isalnum() or c in (" ", "-", "_")).strip()
+    if not safe_name:
+        safe_name = "default"
+    
+    ckpt_dir = cfg.wiki_path / "AINotes" / "Research" / ".sessions"
+    ckpt_path = ckpt_dir / f"{safe_name}.json"
+    save_session(state, ckpt_path)
+    console.print(f"[green]Session saved as '{safe_name}'[/green]")
+
+
+def cmd_load_session(args: list[str], cfg: KnrsConfig) -> None:
+    """Load a saved conversation session."""
+    from agent.context import load_session
+    from repl.repl import _set_current_state
+    
     if not args:
-        console.print("[red]Usage: /research <topic> [--resume][/red]")
+        # List available sessions
+        ckpt_dir = cfg.wiki_path / "AINotes" / "Research" / ".sessions"
+        if not ckpt_dir.exists():
+            console.print("[yellow]No saved sessions found.[/yellow]")
+            return
+        sessions = sorted(ckpt_dir.glob("*.json"))
+        if not sessions:
+            console.print("[yellow]No saved sessions found.[/yellow]")
+            return
+        console.print("[bold cyan]Saved sessions:[/bold cyan]")
+        for s in sessions:
+            console.print(f"  {s.stem}")
+        console.print("\n[dim]Use /load-session <name> to load one.[/dim]")
         return
-        
-    resume = "--resume" in args
     
-    # Filter out flags to get the topic
-    topic_parts = [a for a in args if not a.startswith("--")]
-    if not topic_parts and not resume:
-        console.print("[red]Please specify a research topic.[/red]")
+    name = args[0]
+    ckpt_dir = cfg.wiki_path / "AINotes" / "Research" / ".sessions"
+    ckpt_path = ckpt_dir / f"{name}.json"
+    
+    if not ckpt_path.exists():
+        console.print(f"[red]Session '{name}' not found.[/red]")
         return
-        
-    topic = " ".join(topic_parts)
     
-    from agent.agent import ResearchAgent
-    from agent.engine import AgentSession
-    from pathlib import Path
-    
-    # Checkpoint path
-    safe_topic = "".join(c for c in topic if c.isalnum() or c in (" ", "-", "_")).strip()
-    if not safe_topic:
-        safe_topic = "ResumeSession"
-    ckpt_path = cfg.wiki_path / "AINotes" / "Research" / ".checkpoints" / f"{safe_topic}.json"
-    
-    try:
-        with AgentSession(cfg) as session:
-            agent = ResearchAgent(cfg, session)
-            
-            if resume:
-                if ckpt_path.exists():
-                    agent.load_checkpoint(ckpt_path)
-                    console.print(f"[green]Resumed session from {ckpt_path.name}[/green]")
-                    # If we don't have a new topic, just use what we have in history.
-                    if topic:
-                        agent.history.append({"role": "user", "content": f"New instruction: {topic}"})
-                else:
-                    console.print(f"[red]No checkpoint found for topic '{topic}' to resume from.[/red]")
-                    return
-            else:
-                # Initial prompt
-                init_prompt = f"Please research the following topic: '{topic}'.\n\nDevelop a plan and use the available tools to find relevant information. Then synthesize your findings into a comprehensive research document."
-                agent.history.append({"role": "user", "content": init_prompt})
-                
-            # Execute loop
-            step_count = 0
-            max_steps = 30
-            
-            while step_count < max_steps:
-                ctx_size = agent.get_context_size()
-                ctx_str = f"{ctx_size} chars" if ctx_size < 1024 else f"{ctx_size/1024:.1f} KB"
-                console.print(f"[dim]Agent thinking (Step {step_count+1}, Context: {ctx_str})...[/dim]")
-                
-                try:
-                    is_done, msg, tool_calls = agent.step()
-                except Exception as e:
-                    console.print(f"[red]Agent Error: {e}[/red]")
-                    break
-                    
-                agent.save_checkpoint(ckpt_path)
-                
-                # Display the agent's thought/message via markdown
-                from rich.markdown import Markdown
-                console.print(Markdown(msg))
-                
-                if is_done:
-                    console.print("[bold green]Research Task Complete![/bold green]")
-                    break
-                    
-                if tool_calls:
-                    stop_session = False
-                    for tool_call in tool_calls:
-                        tool_name = tool_call.get("tool")
-                        tool_args = tool_call.get("args", {})
-                        
-                        console.print(f"[bold cyan]Agent proposes to use tool:[/bold cyan] {tool_name}")
-                        
-                        console.print(f"[dim]Executing {tool_name}...[/dim]")
-                        try:
-                            result = agent.execute_tool(tool_call)
-                            # print a short preview of the result
-                            preview = result[:200].replace("\n", " ") + "..." if len(result) > 200 else result
-                            console.print(f"[dim]Tool result preview: {preview}[/dim]")
-                        except Exception as e:
-                            console.print(f"[red]Tool execution error: {e}[/red]")
-                            agent.history.append({"role": "user", "content": f"Tool execution failed with error: {e}"})
-                            
-                    agent.save_checkpoint(ckpt_path)
-                    if stop_session:
-                        break
-                else:
-                    # If neither done nor tool call, the agent just talked to us. Provide it with a nudge.
-                    if any(word in msg.lower() for word in ["finished", "completed", "done", "synthesis", "synthesized", "wrote", "written"]):
-                        nudge_msg = "[SYSTEM NUDGE]: It looks like you might be finished. If so, please output 'TASK_COMPLETE' to end the session. If not, you MUST execute a tool call using the JSON format."
-                    else:
-                        nudge_msg = "[SYSTEM NUDGE]: You are procrastinating. You MUST execute your plan immediately by outputting exactly ONE tool call using the required JSON code block format. Do not just describe your plan."
-                    
-                    agent.history.append({"role": "user", "content": nudge_msg})
-                        
-                step_count += 1
-                
-            if step_count >= max_steps:
-                console.print("[yellow]Agent reached maximum steps limit.[/yellow]")
-    except FileNotFoundError as e:
-        console.print(f"[red]Agent backend error: {e}[/red]")
-        console.print("[yellow]Check that the agent backend is installed. Use /backends to see available backends and /set-backend agent <name> to switch.[/yellow]")
-    except RuntimeError as e:
-        console.print(f"[red]Agent backend error: {e}[/red]")
+    state = load_session(ckpt_path)
+    _set_current_state(state)
+    console.print(f"[green]Session '{name}' loaded ({len(state.history)} messages).[/green]")
 
 def cmd_syncthing_status(args: list[str], cfg: KnrsConfig):
     """Check Syncthing status for all relevant paths."""
@@ -897,7 +847,8 @@ COMMANDS = {
     "/models": cmd_models,
     "/set-backend": cmd_set_backend,
     "/set-param": cmd_set_param,
-    "/research": cmd_research,
+    "/save-session": cmd_save_session,
+    "/load-session": cmd_load_session,
     "/research-list": cmd_research_list,
     "/sync-status": cmd_syncthing_status,
 }

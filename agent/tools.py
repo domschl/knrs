@@ -347,6 +347,128 @@ class AgentTools:
         except Exception as e:
             return f"Error moving {src} to {dst}: {e}"
 
+    def wikilink_search(self, query: str) -> str:
+        """Search wiki file index for documents whose stem matches a query.
+
+        Returns matching stems that can be used as ``[[wikilink]]`` targets.
+        """
+        import unicodedata
+        try:
+            query_lower = unicodedata.normalize("NFC", query).strip().lower()
+            matches: List[str] = []
+
+            for md_path in self.config.wiki_path.rglob("*.md"):
+                if ".stfolder" in md_path.parts or ".git" in md_path.parts:
+                    continue
+                stem = md_path.stem
+                norm_stem = unicodedata.normalize("NFC", stem).strip().lower()
+                if query_lower in norm_stem:
+                    # Deduplicate by stem
+                    if stem not in matches:
+                        matches.append(stem)
+
+            if not matches:
+                return f"No wiki documents found matching '{query}'."
+
+            matches.sort()
+            if len(matches) > 50:
+                matches = matches[:50]
+                truncated = "\n\n*(Showing first 50 matches)*"
+            else:
+                truncated = ""
+
+            return "Matching documents (usable as [[wikilink]] targets):\n" + \
+                   "\n".join(f"  [[{m}]]" for m in matches) + truncated
+        except Exception as e:
+            return f"Error searching wikilinks: {e}"
+
+    def check_wiki(self) -> str:
+        """Run metadata checks on all files in AINotes/Research/."""
+        try:
+            from wiki.checker import ensure_minimal_frontmatter
+            from calibre.converter import _split_frontmatter, atomic_write
+            import yaml
+
+            checked = 0
+            updated = 0
+
+            for md_path in self.research_root.rglob("*.md"):
+                if md_path.name.startswith("."):
+                    continue
+                checked += 1
+                try:
+                    content = md_path.read_text(encoding="utf-8")
+                    fm_raw, body = _split_frontmatter(content)
+                    meta = yaml.safe_load(fm_raw) if fm_raw else {}
+                    if not isinstance(meta, dict):
+                        meta = {}
+
+                    if ensure_minimal_frontmatter(md_path, self.config.wiki_path, meta):
+                        new_fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True, indent=2)
+                        new_content = f"---\n{new_fm}---\n{body}"
+                        atomic_write(md_path, new_content)
+                        updated += 1
+                except Exception as e:
+                    logger.warning("check_wiki: skipping %s: %s", md_path.name, e)
+
+            return f"Checked {checked} files in AINotes/Research/. Updated metadata in {updated} files."
+        except Exception as e:
+            return f"Error running check_wiki: {e}"
+
+    def update_index(self) -> str:
+        """Run the full differential vector index update."""
+        try:
+            from vector.indexer import KnrsIndexer
+
+            indexer = KnrsIndexer(self.config)
+            indexer.run_indexing(
+                self.config.markdown_books,
+                self.config.wiki_path,
+            )
+            return "Vector index update complete."
+        except Exception as e:
+            return f"Error updating index: {e}"
+
+    def extract_timeline(self, path: str) -> str:
+        """Extract timeline tables from a research file and merge into timelines.json."""
+        try:
+            from timelines.extractor import extract_from_file
+
+            p = self._sanitize_write_path(path)
+            if not p.exists():
+                return f"Error: File not found: {path}"
+
+            # Extract events using wiki_path as root (research files live under wiki_path)
+            events = extract_from_file(p, self.config.wiki_path)
+
+            if not events:
+                return f"No timeline tables found in {path}."
+
+            # Load existing timeline data
+            timeline_file = self.config.timelines / "timelines.json"
+            existing: list = []
+            if timeline_file.exists():
+                import json as _json
+                with timeline_file.open("r", encoding="utf-8") as f:
+                    existing = _json.load(f)
+
+            # Remove any existing events from this file, then add new ones
+            rel_path = str(p.relative_to(self.config.wiki_path))
+            existing = [e for e in existing if e.get("source_file") != rel_path]
+            existing.extend(e.to_dict() for e in events)
+
+            # Sort by start_year
+            existing.sort(key=lambda x: (x.get("start_year", 0), x.get("end_year", 0)))
+
+            timeline_file.parent.mkdir(parents=True, exist_ok=True)
+            import json as _json
+            with timeline_file.open("w", encoding="utf-8") as f:
+                _json.dump(existing, f, indent=2)
+
+            return f"Extracted {len(events)} timeline events from {path} and merged into timelines.json."
+        except Exception as e:
+            return f"Error extracting timeline from {path}: {e}"
+
     def dispatch(self, tool_name: str, args: dict[str, Any]) -> str:
         """Execute a tool dynamically."""
         logger.info(f"Agent tool call: {tool_name}({args})")
@@ -370,5 +492,14 @@ class AgentTools:
             return self.wikipedia_search(**args)
         elif tool_name == "wikipedia_fetch":
             return self.wikipedia_fetch(**args)
+        elif tool_name == "wikilink_search":
+            return self.wikilink_search(**args)
+        elif tool_name == "check_wiki":
+            return self.check_wiki()
+        elif tool_name == "update_index":
+            return self.update_index()
+        elif tool_name == "extract_timeline":
+            return self.extract_timeline(**args)
         else:
             return f"Error: Unknown tool {tool_name}"
+
