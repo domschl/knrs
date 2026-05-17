@@ -46,26 +46,93 @@ class AgentTools:
             return False
             
     def _resolve_read_path(self, path_str: str) -> Optional[Path]:
-        """Resolve a string path (absolute, relative, or prefixed) to a safe Path object."""
+        """Resolve a string path (absolute, relative, or prefixed) to a safe Path object.
+        Supports:
+          - Bracketed links: "[[Some Page]]" -> "Some Page"
+          - Direct relative/absolute paths
+          - Missing extensions: "wiki:Notes/Some Page" -> "wiki:Notes/Some Page.md"
+          - Stems/Wiki-links: "Some Page" -> resolved to full path in wiki/books/summaries
+        """
+        import unicodedata
+
+        # 1. Clean bracketed links and whitespace
+        path_str = path_str.strip()
+        if path_str.startswith("[[") and path_str.endswith("]]"):
+            path_str = path_str[2:-2].strip()
+
+        # 2. Extract logical prefixes
+        prefix = None
         if path_str.startswith("books:"):
-            return self.config.markdown_books / path_str.split(":", 1)[1]
+            prefix = "books"
+            sub_path = path_str.split(":", 1)[1]
         elif path_str.startswith("wiki:"):
-            return self.config.wiki_path / path_str.split(":", 1)[1]
+            prefix = "wiki"
+            sub_path = path_str.split(":", 1)[1]
         elif path_str == "books":
             return self.config.markdown_books
         elif path_str == "wiki":
             return self.config.wiki_path
+        else:
+            sub_path = path_str
+
+        # 3. Direct checks (with and without appending .md/.markdown extensions)
+        def find_direct(base_dir: Path, rel_path: str) -> Optional[Path]:
+            # Try exact path
+            p = base_dir / rel_path
+            if p.exists():
+                return p
+            # Try common extensions
+            for ext in (".md", ".markdown"):
+                p_ext = base_dir / f"{rel_path}{ext}"
+                if p_ext.exists():
+                    return p_ext
+            return None
+
+        # Resolve based on prefix
+        if prefix == "books":
+            resolved = find_direct(self.config.markdown_books, sub_path)
+            if resolved: return resolved
+        elif prefix == "wiki":
+            resolved = find_direct(self.config.wiki_path, sub_path)
+            if resolved: return resolved
+        else:
+            p = Path(path_str)
+            if p.is_absolute() and p.exists():
+                return p
             
-        p = Path(path_str)
-        if not p.is_absolute():
-            # Try against wiki first, then books
-            test_wiki = self.config.wiki_path / p
-            if test_wiki.exists(): return test_wiki
-            test_books = self.config.markdown_books / p
-            if test_books.exists(): return test_books
-            return p # Fallback to returning the relative path as-is, though it might fail safety checks
-            
-        return p
+            # Try direct relative path under wiki first, then books
+            resolved = find_direct(self.config.wiki_path, sub_path)
+            if resolved: return resolved
+            resolved = find_direct(self.config.markdown_books, sub_path)
+            if resolved: return resolved
+
+        # 4. Search by stem (Wiki-link style)
+        # Normalize the target stem to match case-insensitively
+        target_stem = Path(sub_path).stem
+        target_norm = unicodedata.normalize("NFC", target_stem).strip().lower()
+
+        # Determine search roots based on prefix
+        roots = []
+        if prefix == "wiki":
+            roots = [self.config.wiki_path]
+        elif prefix == "books":
+            roots = [self.config.markdown_books]
+        else:
+            roots = [
+                self.config.wiki_path,
+                self.config.markdown_books,
+                self.config.book_summaries,
+            ]
+
+        for root in roots:
+            for md_path in root.rglob("*.md"):
+                if ".stfolder" in md_path.parts or ".git" in md_path.parts:
+                    continue
+                stem_norm = unicodedata.normalize("NFC", md_path.stem).strip().lower()
+                if stem_norm == target_norm:
+                    return md_path
+
+        return None
 
     def vector_search(self, query: str, top_k: int = 5) -> str:
         """Semantic search across indexed files."""

@@ -27,9 +27,9 @@ You have access to the following tools:
    Example: {"tool": "vector_search", "args": {"query": "Roman Law in Greek texts", "top_k": 5}}
 
 2. `file_read(path, start_line, end_line)`
-   Read lines from a specific file. Useful to read more context around a search result snippet.
-   Use the prefixed path (e.g., "books:History Of Rome.md"). Use -1 for end_line to read to the end.
-   Example: {"tool": "file_read", "args": {"path": "books:History Of Rome.md", "start_line": 1, "end_line": 100}}
+   Read lines from a specific file. Useful to read more context around a search result snippet or a wikilink target.
+   Supports absolute paths, prefixed paths (e.g. "books:History Of Rome.md"), bare stems (e.g. "History Of Rome"), or bracketed wiki-links (e.g. "[[History Of Rome]]"). Use -1 for end_line to read to the end.
+   Example: {"tool": "file_read", "args": {"path": "[[History Of Rome]]", "start_line": 1, "end_line": 100}}
 
 3. `file_list(directory)`
    List files in a given directory prefix.
