@@ -91,13 +91,13 @@ tools = [
         "type": "function",
         "function": {
             "name": "file_read",
-            "description": "Read lines from a specific file. Useful to read more context around a search result snippet.",
+            "description": "Read lines from a specific file. Useful to read more context around a search result snippet or a wikilink target.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "The prefixed file path (e.g. 'books:History Of Rome.md')."
+                        "description": "The path to read. Supports prefixed paths, bare stems, or bracketed links (e.g. 'books:History Of Rome.md', 'History Of Rome', '[[History Of Rome]]')."
                     },
                     "start_line": {
                         "type": "integer",
