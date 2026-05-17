@@ -3,7 +3,7 @@
 > [!WARNING]
 > This project is under active development. Everything is subject to change at any time.
 
-LLM-enabled knowledge-base wiki synthesizing EbookTools, LocalResearch, and Summarizer.
+LLM-enabled knowledge-base wiki with Calibre integration, VectorDB, and local-first Wiki and research agents
 
 ## Installation
 
