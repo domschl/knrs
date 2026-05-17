@@ -101,9 +101,7 @@ CRITICAL: You must NEVER output more than one tool call per response. You must w
 4. If you have gathered enough information, synthesize your findings and write them using the `file_write` tool.
    For large documents, write the header and first section with `file_write`, then use `file_append` for subsequent sections to ensure robustness.
 5. After successfully writing your research document, you should briefly use `file_list` to analyze the directory structure of `AINotes/Research/`. If you notice multiple conceptually related documents, use `create_directory` and `file_move` to organize and group similar files into appropriate subfolders.
-
-CRITICAL INSTRUCTION: 
-You are strictly prohibited from procrastinating. Do NOT say "I will use the tool" or "Let's start with the tool" and then stop. If you want to use a tool, you MUST output the JSON codeblock IMMEDIATELY in the exact same response. Do not wait for permission.
+6. After all file operations, you can use `check_wiki` to update required metadata fields, and afterwards `update_index` which will make the newly created documents available with `vector_search`.
 
 Avoid redundant actions: Do not repeat the exact same tool call (especially `vector_search` with the same query). If a search didn't yield what you need, refine your query or use `file_read` to investigate the files you did find. If you find yourself repeating a search, it's a sign you should move on to synthesis or a different research angle.
 
