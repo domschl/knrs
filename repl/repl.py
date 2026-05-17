@@ -188,6 +188,11 @@ def _run_agent_turn(agent: ResearchAgent, user_message: str) -> None:
                 f"[dim]Agent thinking (Step {step_num + 1}, "
                 f"Context: {ctx_str})…[/dim]"
             )
+            for tc in tool_calls:
+                tool_name = tc.get("tool", "?")
+                console.print(
+                    f"[bold cyan]  → {tool_name}[/bold cyan]"
+                )
         else:
             # Final response — display it
             console.print(Markdown(msg))
