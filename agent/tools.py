@@ -471,7 +471,7 @@ class AgentTools:
 
     def dispatch(self, tool_name: str, args: dict[str, Any]) -> str:
         """Execute a tool dynamically."""
-        logger.info(f"Agent tool call: {tool_name}({args})")
+        logger.debug(f"Agent tool call: {tool_name}({args})")
         if tool_name == "vector_search":
             return self.vector_search(**args)
         elif tool_name == "file_read":

@@ -243,7 +243,6 @@ class ResearchAgent:
             summary = str(args)
 
         c.print(f"[bold cyan]  → {tool_name}[/bold cyan] [dim]({summary})…[/dim]")
-        logger.info(f"Executing tool {tool_name} with args: {summary}")
 
         try:
             result = self.tools.dispatch(tool_name, args)
