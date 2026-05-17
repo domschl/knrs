@@ -35,7 +35,7 @@ from summarizer_core.utils import get_platform_config, get_llm_server_config, wa
 # Constants
 DEFAULT_LOCAL_CONFIG: Dict[str, Any] = {
     "model_name": "embeddinggemma-300M-Q8_0",
-    "batch_size": 32
+    "batch_size": 1024
 }
 
 def _embed(url: str, api_key: Optional[str], model: str, input_path: Path, output_path: Path) -> None:

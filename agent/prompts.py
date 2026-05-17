@@ -1,3 +1,12 @@
+# =========================================================================
+# DEVELOPER WARNING: SINGLE SOURCE OF TRUTH (SST) FOR AGENT TOOLS
+#
+# If you add, modify, or remove any agent tools, you MUST update:
+# 1. agent/tools.py (The dynamic dispatch & implementation)
+# 2. agent/prompts.py (The text-based instructions for raw LLMs)
+# 3. subprocesses/agent_api/agent_api.py (The JSON schema array)
+# =========================================================================
+
 SYSTEM_PROMPT = """You are an advanced autonomous research agent.
 You have access to a local knowledge base of books, notes, summaries, and timelines.
 Your goal is to conduct research on a topic provided by the user, and write the findings to a markdown document.

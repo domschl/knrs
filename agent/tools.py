@@ -1,3 +1,12 @@
+# =========================================================================
+# DEVELOPER WARNING: SINGLE SOURCE OF TRUTH (SST) FOR AGENT TOOLS
+#
+# If you add, modify, or remove any agent tools, you MUST update:
+# 1. agent/tools.py (The dynamic dispatch & implementation)
+# 2. agent/prompts.py (The text-based instructions for raw LLMs)
+# 3. subprocesses/agent_api/agent_api.py (The JSON schema array)
+# =========================================================================
+
 from __future__ import annotations
 
 import json
