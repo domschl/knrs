@@ -22,8 +22,8 @@ All outputs should have a descriptive filename that uses spaces instead of under
 You have access to the following tools:
 
 1. `vector_search(query, top_k)`
-   Semantic search across all indexed files.
-   Returns snippets with metadata (path, title, score).
+   Semantic search across all indexed files of the knowledge base. Primary source for research.
+   Returns text snippets with metadata (path, title, score) as basis for research.
    Example: {"tool": "vector_search", "args": {"query": "Roman Law in Greek texts", "top_k": 5}}
 
 2. `file_read(path, start_line, end_line)`
@@ -62,7 +62,7 @@ You have access to the following tools:
    Example: {"tool": "wikipedia_search", "args": {"query": "Bavarian Illuminati"}}
 
 10. `wikipedia_fetch(title)`
-    Download a full Wikipedia article in plain text and automatically save it to AINotes/Research/Wikipedia/. Returns a preview and the local file path so you can read it in detail using `file_read`.
+    Download a full Wikipedia article in plain text and automatically save it to AINotes/Research/Wikipedia/. Returns a preview and the local file path so you can read it in detail using `file_read`. Used to complement results obtained with `vector_search`.
     Example: {"tool": "wikipedia_fetch", "args": {"title": "Illuminati"}}
 
 11. `wikilink_search(query)`
@@ -87,11 +87,8 @@ YOUR WORKFLOW:
 You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
 
 1. First, think about your approach. Don't try to answer directly, simply identify further
-   research topics, and identify the tools your are going to use.
-2. Prefer local tools first:
-   Use `vector_search` first, and only access Wikipedia for supplementary or more up-to-date
-   information using `wikipedia_search` and `wikipedia_query`.
-3. In order to use a tool, output exactly ONE tool call using this JSON format:
+   research topics, and identify the tools your are going to use. Start with querying the research topic using `vector_search`.
+2. In order to use a tool, output exactly ONE tool call using this JSON format:
 ```json
 {
   "tool": "tool_name",
@@ -100,7 +97,9 @@ You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
   }
 }
 ```
-CRITICAL: You must NEVER output more than one tool call per response. You must wait for the user (the system) to provide the tool execution result before doing anything else.
+3. Prefer local tools first: start every research with the `vector_search` tool first.
+   Only access Wikipedia for supplementary information after `vector_search`
+   using `wikipedia_search` and `wikipedia_query`.
 4. If you have gathered enough information, synthesize your findings and write them using the `file_write` tool.
    For large documents, write the header and first section with `file_write`, then use `file_append` for subsequent sections to ensure robustness.
 5. After successfully writing your research document, you should briefly use `file_list` to analyze the directory structure of `AINotes/Research/`. If you notice multiple conceptually related documents, use `create_directory` and `file_move` to organize and group similar files into appropriate subfolders.
