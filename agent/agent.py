@@ -71,33 +71,54 @@ class ResearchAgent:
         # 2. Aggressive search for JSON-like blocks
         potential_blocks = []
 
-        # Look for markdown code blocks
+        # Find markdown code blocks first
         blocks = re.finditer(r'```(?:json)?\s*(.*?)(?:```|$)', text, re.DOTALL)
         for b in blocks:
-            content = b.group(1).strip()
-            if content.startswith('{') or content.startswith('['):
-                potential_blocks.append(content)
+            potential_blocks.append(b.group(1).strip())
 
-        # Also look for raw JSON outside blocks if nothing found yet
+        # Also just find anything that looks like a balanced { ... } or [ ... ]
+        def extract_balanced(text_to_search: str) -> List[str]:
+            results = []
+            start_idx = 0
+            while start_idx < len(text_to_search):
+                idx_brace = text_to_search.find('{', start_idx)
+                idx_bracket = text_to_search.find('[', start_idx)
+                
+                # Find the earliest opening token
+                valid_starts = [i for i in (idx_brace, idx_bracket) if i != -1]
+                if not valid_starts:
+                    break
+                start = min(valid_starts)
+                
+                open_char = text_to_search[start]
+                close_char = '}' if open_char == '{' else ']'
+                
+                depth = 0
+                end = -1
+                for i in range(start, len(text_to_search)):
+                    if text_to_search[i] == open_char:
+                        depth += 1
+                    elif text_to_search[i] == close_char:
+                        depth -= 1
+                        if depth == 0:
+                            end = i
+                            break
+                
+                if end != -1:
+                    results.append(text_to_search[start:end+1])
+                    start_idx = end + 1
+                else:
+                    # Unbalanced, try repairing later
+                    results.append(text_to_search[start:])
+                    break
+            return results
+
         if not potential_blocks:
-            matches = re.finditer(r'\{\s*"(?:tool|query)"\s*:\s*"[^"]+?".*?\}', text, re.DOTALL)
-            for m in matches:
-                potential_blocks.append(m.group(0))
-
-            if not potential_blocks:
-                start = text.find('{"tool"')
-                if start == -1:
-                    start = text.find('{\n  "tool"')
-                if start == -1:
-                    start = text.find('{"query"')
-                if start == -1:
-                    start = text.find('{\n  "query"')
-                if start == -1:
-                    start = text.find('[\n  {\n    "query"')
-                if start != -1:
-                    potential_blocks.append(text[start:])
+            potential_blocks.extend(extract_balanced(text))
 
         def try_parse(raw: str) -> Optional[Dict[str, Any]]:
+            # Clean up obvious trailing garbage
+            raw = raw.strip()
             # Try direct JSON
             try:
                 p = json.loads(raw)
@@ -109,44 +130,17 @@ class ResearchAgent:
                     if "query" in p[0]: return {"tool": "vector_search", "args": p[0]}
             except Exception: pass
 
-            # Try to repair trailing braces
-            for i in range(1, 5):
-                try:
-                    p = json.loads(raw + ("}" * i))
-                    if isinstance(p, dict) and "tool" in p: return p
-                except Exception: pass
-
-            # Try to repair trailing quote + braces
-            for i in range(1, 5):
-                try:
-                    p = json.loads(raw + '"' + ("}" * i))
-                    if isinstance(p, dict) and "tool" in p: return p
-                except Exception: pass
-
             # Try YAML fallback (much more forgiving with strings/newlines)
             import yaml
             try:
                 p = yaml.safe_load(raw)
-                if isinstance(p, dict) and "tool" in p: return p
+                if isinstance(p, dict):
+                    if "tool" in p: return p
+                    if "query" in p: return {"tool": "vector_search", "args": p}
+                if isinstance(p, list) and len(p) > 0 and isinstance(p[0], dict):
+                    if "tool" in p[0]: return p[0]
+                    if "query" in p[0]: return {"tool": "vector_search", "args": p[0]}
             except Exception: pass
-
-            # Last ditch: try to escape unescaped internal quotes in "content"
-            # This is specifically for file_write
-            if '"content"' in raw:
-                try:
-                    c_start = raw.find('"content"')
-                    v_start = raw.find('"', c_start + 9)
-                    if v_start != -1:
-                        v_end = raw.rfind('}', v_start)
-                        v_end = raw.rfind('"', v_start, v_end)
-                        if v_end != -1:
-                            prefix = raw[:v_start+1]
-                            middle = raw[v_start+1:v_end]
-                            suffix = raw[v_end:]
-                            repaired = prefix + middle.replace('"', '\\"') + suffix
-                            p = json.loads(repaired)
-                            if isinstance(p, dict) and "tool" in p: return p
-                except Exception: pass
 
             return None
 
