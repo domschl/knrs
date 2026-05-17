@@ -203,6 +203,44 @@ class ResearchAgent:
         self.state.consecutive_blocks = 0
         self.state.call_history.append(tool_call)
 
+        # Print concise 1-line tool execution log
+        from rich.console import Console
+        c = Console()
+        summary = ""
+        if tool_name == "vector_search":
+            summary = f"query: '{args.get('query', '')}'"
+        elif tool_name == "file_read":
+            summary = f"file: '{args.get('path', '')}' (lines {args.get('start_line', 1)} to {args.get('end_line', -1)})"
+        elif tool_name == "file_list":
+            summary = f"dir: '{args.get('directory', '')}'"
+        elif tool_name == "timeline_query":
+            summary = f"filter: {args}"
+        elif tool_name == "file_write":
+            summary = f"write: '{args.get('path', '')}'"
+        elif tool_name == "file_append":
+            summary = f"append: '{args.get('path', '')}'"
+        elif tool_name == "create_directory":
+            summary = f"mkdir: '{args.get('path', '')}'"
+        elif tool_name == "file_move":
+            summary = f"move: '{args.get('src', '')}' to '{args.get('dst', '')}'"
+        elif tool_name == "wikipedia_search":
+            summary = f"wiki search: '{args.get('query', '')}'"
+        elif tool_name == "wikipedia_fetch":
+            summary = f"wiki fetch: '{args.get('title', '')}'"
+        elif tool_name == "wikilink_search":
+            summary = f"wikilink search: '{args.get('query', '')}'"
+        elif tool_name == "check_wiki":
+            summary = "checking AINotes/Research/ metadata"
+        elif tool_name == "update_index":
+            summary = "updating vector index"
+        elif tool_name == "extract_timeline":
+            summary = f"extract timeline: '{args.get('path', '')}'"
+        else:
+            summary = str(args)
+
+        c.print(f"[bold cyan]  → {tool_name}[/bold cyan] [dim]({summary})…[/dim]")
+        logger.info(f"Executing tool {tool_name} with args: {summary}")
+
         result = self.tools.dispatch(tool_name, args)
 
         # Track written files
