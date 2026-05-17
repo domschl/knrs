@@ -1,8 +1,39 @@
 # knrs
 
-LLM-enabled knowledge-base wiki that synthesises [EbookTools](previous/EbookTools),
-[LocalResearch](previous/LocalResearch), and [Summarizer](previous/Summarizer) into a
-unified Markdown wiki maintained collaboratively by human and LLM pipelines.
+> [!WARNING]
+> This project is under active development. Everything is subject to change at any time.
 
-See [vision-plan.md](vision-plan.md) and [implementation-plan.md](implementation-plan.md)
-for full project documentation.
+LLM-enabled knowledge-base wiki synthesizing EbookTools, LocalResearch, and Summarizer.
+
+## Installation
+
+To sync dependencies and initialize the subprocess backends, run:
+
+```bash
+python3 install.py
+```
+
+*Note: In network-isolated or offline environments, you can run:*
+```bash
+python3 install.py --offline
+```
+
+## How to Start
+
+To start the interactive REPL:
+
+```bash
+uv run knrs
+```
+
+To view the resolved configuration:
+
+```bash
+uv run knrs config
+```
+
+To list all available CLI commands:
+
+```bash
+uv run knrs --help
+```
