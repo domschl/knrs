@@ -229,6 +229,11 @@ class ResearchAgent:
         agent produces a response with no tool calls or the step limit
         is hit.
 
+        If the agent performed research (used search/read tools) but wrote
+        a long chat response without saving a file, it gets a one-time
+        reminder that file_write is mandatory before the response is
+        accepted as final.
+
         Args:
             user_message: The user's free-text input.
             max_steps:    Maximum number of generation steps.
@@ -245,6 +250,14 @@ class ResearchAgent:
 
         all_tool_actions: List[Dict[str, Any]] = []
         final_text = ""
+        files_written_before = set(self.state.written_files)
+        _write_nudge_sent = False  # only nudge once per turn
+
+        # Classify which tools were used this turn
+        _RESEARCH_TOOLS = {
+            "vector_search", "file_read", "wikipedia_search",
+            "wikipedia_fetch", "timeline_query",
+        }
 
         for step_num in range(max_steps):
             msg, tool_calls = self.step()
@@ -253,7 +266,29 @@ class ResearchAgent:
                 on_step(step_num, msg, tool_calls)
 
             if not tool_calls:
-                # Agent is done — this is the conversational response
+                # Agent produced a text-only response.
+                # Check: did it do research this turn but skip file_write?
+                if not _write_nudge_sent:
+                    used_research = any(
+                        tc.get("tool") in _RESEARCH_TOOLS
+                        for tc in all_tool_actions
+                    )
+                    new_files = set(self.state.written_files) - files_written_before
+                    # Nudge only if: research was done, response is substantial,
+                    # and no file was written this turn.
+                    if used_research and not new_files and len(msg) > 500:
+                        _write_nudge_sent = True
+                        nudge = (
+                            "[SYSTEM]: You have conducted research and produced a detailed "
+                            "response, but you have NOT saved it to a file. "
+                            "This is REQUIRED. Please use file_write to save your findings "
+                            "to AINotes/Research/ NOW, then follow with check_wiki() and "
+                            "update_index(). After saving, you may write a brief chat "
+                            "message confirming what was saved and where."
+                        )
+                        self.state.append_user(nudge)
+                        continue  # loop again — don't accept this as the final response
+
                 final_text = msg
                 break
 
@@ -266,3 +301,4 @@ class ResearchAgent:
             final_text = msg  # type: ignore[possibly-undefined]
 
         return final_text, all_tool_actions
+
