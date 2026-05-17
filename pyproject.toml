@@ -13,7 +13,28 @@ dependencies = [
 ]
 
 [project.scripts]
-knrs = "knrs.__main__:main"
+knrs = "knrs:main"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "agent",
+    "calibre",
+    "external_lib",
+    "repl",
+    "subprocesses",
+    "summarizer",
+    "timelines",
+    "utils",
+    "vector",
+    "wiki",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config.py" = "config.py"
+"logging_setup.py" = "logging_setup.py"
+"naming.py" = "naming.py"
+"paths.py" = "paths.py"
+"knrs.py" = "knrs.py"
 
 [build-system]
 requires = ["hatchling"]

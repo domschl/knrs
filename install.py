@@ -64,6 +64,7 @@ def wants_xpu(item_path):
 def main():
     parser = argparse.ArgumentParser(description="knrs installation and update script.")
     parser.add_argument("--xpu", action="store_true", help="Install Intel XPU optimized torch versions.")
+    parser.add_argument("--offline", action="store_true", help="Run uv sync in offline mode.")
     args = parser.parse_args()
 
     root = Path(__file__).parent.resolve()
@@ -74,10 +75,10 @@ def main():
         sys.exit(1)
 
     print("--- Syncing root project ---")
-    run_command(["uv", "sync"], cwd=root)
+    run_command(["uv", "sync"] + (["--offline"] if args.offline else []), cwd=root)
 
     # 2. Iterate subprocesses
-    sub_dir = root / "knrs" / "subprocesses"
+    sub_dir = root / "subprocesses"
     if not sub_dir.exists():
         print(f"Warning: Subprocesses directory not found at {sub_dir}")
         return
@@ -99,7 +100,7 @@ def main():
             continue
 
         print(f"\nSyncing {item.name}...")
-        run_command(["uv", "sync"], cwd=item)
+        run_command(["uv", "sync"] + (["--offline"] if args.offline else []), cwd=item)
 
         # Trigger initialization by querying capabilities
         script = item / f"{item.name}.py"

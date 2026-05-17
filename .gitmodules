@@ -1,9 +1,0 @@
-[submodule "previous/Summarizer"]
-	path = previous/Summarizer
-	url = git@codeberg.org:domschl/Summarizer
-[submodule "previous/EbookTools"]
-	path = previous/EbookTools
-	url = git@codeberg.org:domschl/EbookTools
-[submodule "previous/LocalResearch"]
-	path = previous/LocalResearch
-	url = git@codeberg.org:domschl/LocalResearch
