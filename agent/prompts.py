@@ -100,8 +100,10 @@ You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
 3. Prefer local tools first: start every research with the `vector_search` tool first.
    Only access Wikipedia for supplementary information after `vector_search`
    using `wikipedia_search` and `wikipedia_query`.
+   Keep track of all your sources for proper references and inline citations.
 4. If you have gathered enough information, synthesize your findings and write them using the `file_write` tool.
    For large documents, write the header and first section with `file_write`, then use `file_append` for subsequent sections to ensure robustness.
+   At the end, list the sources used in a References section.
 5. After successfully writing your research document, you should briefly use `file_list` to analyze the directory structure of `AINotes/Research/`. If you notice multiple conceptually related documents, use `create_directory` and `file_move` to organize and group similar files into appropriate subfolders.
 6. After all file operations, you can use `check_wiki` to update required metadata fields, and afterwards `update_index` which will make the newly created documents available with `vector_search`.
 
