@@ -55,6 +55,272 @@ DEFAULT_LOCAL_CONFIG: AgentApiConfig = {
     "default_temperature": 0.2,
 }
 
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "vector_search",
+            "description": "Semantic search across all indexed files in the local database.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search term or semantic query."
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of results to return (default is 5).",
+                        "default": 5
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_read",
+            "description": "Read lines from a specific file. Useful to read more context around a search result snippet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The prefixed file path (e.g. 'books:History Of Rome.md')."
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "The starting line number (1-indexed)."
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "The ending line number (use -1 to read to the end)."
+                    }
+                },
+                "required": ["path", "start_line", "end_line"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_list",
+            "description": "List files in a given directory prefix.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "The directory prefix (e.g. 'wiki:Notes')."
+                    }
+                },
+                "required": ["directory"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "timeline_query",
+            "description": "Query the parsed timeline events database. All arguments are optional. Returns a formatted markdown table of events.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_year": {
+                        "type": "integer",
+                        "description": "Start year filter (negative for BC)."
+                    },
+                    "end_year": {
+                        "type": "integer",
+                        "description": "End year filter (negative for BC)."
+                    },
+                    "context_filters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of context strings to filter by."
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of keywords to filter by."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_write",
+            "description": "Write (overwrite) content to a file in AINotes/Research/.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The relative destination path within AINotes/Research/ (e.g. 'Roman Law/General Principles.md')."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The complete markdown file content."
+                    }
+                },
+                "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_append",
+            "description": "Append content to an existing file in AINotes/Research/. Use this for large documents to build them section by section.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The relative destination path within AINotes/Research/."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The markdown content to append."
+                    }
+                },
+                "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_directory",
+            "description": "Create a subdirectory in AINotes/Research/.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The relative directory path to create within AINotes/Research/ (e.g. 'Roman Law')."
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_move",
+            "description": "Move or rename a file or directory strictly within AINotes/Research/.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "src": {
+                        "type": "string",
+                        "description": "Source path relative to AINotes/Research/."
+                    },
+                    "dst": {
+                        "type": "string",
+                        "description": "Destination path relative to AINotes/Research/."
+                    }
+                },
+                "required": ["src", "dst"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wikipedia_search",
+            "description": "Search Wikipedia for an article title. Returns the top 10 matching article titles and a brief snippet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search term query."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wikipedia_fetch",
+            "description": "Download a full Wikipedia article in plain text and automatically save it to AINotes/Research/Wikipedia/. Returns a preview and the local file path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The exact Wikipedia article title."
+                    }
+                },
+                "required": ["title"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wikilink_search",
+            "description": "Search for wiki documents whose title matches a query. Returns stems usable as [[wikilink]] targets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_wiki",
+            "description": "Ensure all files in AINotes/Research/ have proper metadata (uuid, context, creation_date). Call this after writing research files.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_index",
+            "description": "Run the full vector index update so newly written research becomes searchable. Call this after writing research files and running check_wiki.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "extract_timeline",
+            "description": "Extract timeline tables from a research file and merge into the timeline database.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The relative path within AINotes/Research/."
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    }
+]
 
 class ApiAgentEngine:
     def __init__(self, server_cfg: Dict[str, Any], local_cfg: Dict[str, Any]) -> None:
@@ -84,6 +350,8 @@ class ApiAgentEngine:
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": formatted,
+            "tools": tools,
+            "tool_choice": "auto",
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
@@ -97,7 +365,36 @@ class ApiAgentEngine:
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            
+            message = data["choices"][0]["message"]
+            content = message.get("content") or ""
+            
+            tool_calls = message.get("tool_calls")
+            if tool_calls:
+                # Format native tool calls into our existing JSON format!
+                tool_lines = []
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name")
+                    args_str = fn.get("arguments") or "{}"
+                    try:
+                        args = json.loads(args_str)
+                    except Exception:
+                        args = args_str
+                    
+                    tool_json = {
+                        "tool": name,
+                        "args": args
+                    }
+                    tool_lines.append(json.dumps(tool_json, indent=2))
+                
+                # Combine content and tool calls
+                if content:
+                    content += "\n\n" + "\n\n".join(tool_lines)
+                else:
+                    content = "\n\n".join(tool_lines)
+                    
+            return content.strip()
         except requests.HTTPError as e:
             logger.error(f"API request failed: {e}")
             try:

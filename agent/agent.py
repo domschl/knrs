@@ -55,6 +55,11 @@ class ResearchAgent:
         """Find and repair JSON blocks containing 'tool' and 'args'."""
         calls: List[Dict[str, Any]] = []
 
+        if 'tool' in text[:50] or 'TOOL' in text[:50]:
+            print("----------------------------------")
+            print(f"Potential tool call: {text[:300]}")
+            print("----------------------------------")
+
         # 1. Native format check (high confidence)
         gemma_matches = re.finditer(r'<\|tool_call\>call:(\w+)(\{.*?\})<tool_call\|\>', text)
         for gemma_match in gemma_matches:
