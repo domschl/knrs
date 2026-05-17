@@ -236,6 +236,40 @@ class AgentTools:
     def wikipedia_fetch(self, title: str) -> str:
         """Download a Wikipedia article in plain text and save it to AINotes/Research/Wikipedia/."""
         try:
+            # Clean filename
+            safe_title = "".join([c if c.isalnum() or c in " -_" else "_" for c in title])
+            wiki_dir = self.research_root / "Wikipedia"
+            file_path = wiki_dir / f"{safe_title}.md"
+
+            # Check local cache first (case-insensitive)
+            cached_file = None
+            if wiki_dir.exists():
+                target_file_name = f"{safe_title}.md".lower()
+                for item in wiki_dir.iterdir():
+                    if item.is_file() and item.name.lower() == target_file_name:
+                        cached_file = item
+                        break
+
+            if cached_file:
+                try:
+                    content = cached_file.read_text(encoding="utf-8")
+                    from calibre.converter import _split_frontmatter
+                    _, body = _split_frontmatter(content)
+                    body_clean = body.strip()
+                    if body_clean:
+                        # Clean up duplicate title header at the start of the body
+                        if body_clean.startswith(f"# {title}"):
+                            body_clean = body_clean[len(f"# {title}"):].strip()
+                        elif body_clean.startswith("#"):
+                            lines = body_clean.splitlines()
+                            if lines and lines[0].strip().startswith("#"):
+                                body_clean = "\n".join(lines[1:]).strip()
+
+                        preview = body_clean[:500] + "..." if len(body_clean) > 500 else body_clean
+                        return f"Successfully loaded cached article '{title}' from {cached_file.relative_to(self.config.wiki_path)}\n\nPreview:\n{preview}\n\nUse file_read with this path to read the full article."
+                except Exception as e:
+                    logger.warning("Error reading cached file %s: %s. Falling back to download.", cached_file, e)
+
             import urllib.request
             import urllib.parse
             import json
@@ -263,12 +297,7 @@ class AgentTools:
                 return f"Error: No content found for '{title}'."
                 
             # Save it to AINotes/Research/Wikipedia/
-            wiki_dir = self.research_root / "Wikipedia"
             wiki_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Clean filename
-            safe_title = "".join([c if c.isalnum() or c in " -_" else "_" for c in title])
-            file_path = wiki_dir / f"{safe_title}.md"
             
             # Write frontmatter and content
             from calibre.converter import atomic_write
