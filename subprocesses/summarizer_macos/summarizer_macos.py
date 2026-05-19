@@ -8,7 +8,7 @@ import logging
 import threading
 import hashlib
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # Setup logging (to stderr so stdout stays clean for capabilities)
 from rich.logging import RichHandler
@@ -58,7 +58,7 @@ from summarizer_core.utils import get_platform_config, watchdog
 
 # Constants
 VERSION = "0.1.0"
-DEFAULT_CONFIG: Dict[str, Any] = {
+DEFAULT_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
     "model_id": "mlx-community/gemma-4-31b-it-4bit",
     "model_name": "gemma-4-31b-it-mlx",
@@ -66,22 +66,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 class MLXEngine(BaseEngine):
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
-        assistant_id: Optional[str] = config.get("assistant_id", DEFAULT_CONFIG.get("assistant_id"))
+        assistant_id: str | None = config.get("assistant_id", DEFAULT_CONFIG.get("assistant_id"))
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)
-        self.config_data: Dict[str, Any] = load_config(model_id)
-        self.drafter: Optional[Any] = None
+        self.config_data: dict[str, Any] = load_config(model_id)
+        self.drafter: Any | None = None
         if assistant_id:
             logger.info(f"Loading MTP assistant from {assistant_id}...")
             self.drafter = load_drafter(assistant_id, kind="mtp")
 
-    def format_prompt(self, messages: List[Dict[str, str]]) -> str:
+    def format_prompt(self, messages: list[dict[str, str]]) -> str:
         return apply_chat_template(self.processor, self.config_data, messages, num_images=0)
 
     def generate(self, prompt: str, max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
-        gen_kwargs: Dict[str, Any] = {
+        gen_kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
             "temp": temp,
             "repetition_penalty": repetition_penalty,
@@ -104,7 +104,7 @@ class MLXEngine(BaseEngine):
             text = str(output)
         return text
 
-def summarize_file(source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
+def summarize_file(source_file: str, destination_file: str, config: dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -128,7 +128,7 @@ def summarize_file(source_file: str, destination_file: str, config: Dict[str, An
         
         summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, source_md_hash, final_sum_tokens=summary_max_tokens)
         
-        sum_metadata: Dict[str, Any] = {}
+        sum_metadata: dict[str, Any] = {}
         if metadata:
             for key in ['title', 'authors', 'tags', 'uuid']:
                 if key in metadata:
@@ -156,7 +156,7 @@ def summarize_file(source_file: str, destination_file: str, config: Dict[str, An
         logger.exception(f"Error during summarization: {e}")
         sys.exit(1)
 
-def answer_query(query: str, source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
+def answer_query(query: str, source_file: str, destination_file: str, config: dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Error: Source file does not exist: {source_file}")
         sys.exit(1)
@@ -170,7 +170,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: Di
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
         
-        prompt: Union[str, List[Dict[str, str]]] = prompt_text
+        prompt: str | list[dict[str, str]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted:
@@ -209,7 +209,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.capabilities:
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "summarizer_macos",
             "type": "summarizer",
             "config_file": "summarizer_config_macos.json",

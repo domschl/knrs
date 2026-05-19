@@ -15,7 +15,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from config import KnrsConfig
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class AgentTools:
         
     def _is_safe_read_path(self, path: Path) -> bool:
         """Check if a path is within the allowed read roots."""
-        roots: List[Path] = [
+        roots: list[Path] = [
             self.config.markdown_books,
             self.config.book_summaries,
             self.config.wiki_path
@@ -47,7 +47,7 @@ class AgentTools:
         except Exception:
             return False
             
-    def _resolve_read_path(self, path_str: str) -> Optional[Path]:
+    def _resolve_read_path(self, path_str: str) -> Path | None:
         """Resolve a string path (absolute, relative, or prefixed) to a safe Path object.
         Supports:
           - Bracketed links: "[[Some Page]]" -> "Some Page"
@@ -78,7 +78,7 @@ class AgentTools:
             sub_path = path_str
 
         # 3. Direct checks (with and without appending .md/.markdown extensions)
-        def find_direct(base_dir: Path, rel_path: str) -> Optional[Path]:
+        def find_direct(base_dir: Path, rel_path: str) -> Path | None:
             # Try exact path
             p = base_dir / rel_path
             if p.exists():
@@ -154,13 +154,13 @@ class AgentTools:
             if not results:
                 return "No semantic search results found."
                 
-            output: List[str] = []
+            output: list[str] = []
             for i, r in enumerate(results, 1):
                 text, start_line, end_line = get_context_aware_text(searcher, r)
                 title = "Unknown"
                 
                 # Try to get title
-                file_path: Optional[Path] = None
+                file_path: Path | None = None
                 if r.source_label == "books":
                     file_path = self.config.markdown_books / r.bare_path
                 elif r.source_label == "wiki":
@@ -171,7 +171,7 @@ class AgentTools:
                         content = file_path.read_text(encoding="utf-8")
                         fm, _ = _split_frontmatter(content)
                         if fm:
-                            meta: Dict[str, Any] = yaml.safe_load(fm) or {}
+                            meta: dict[str, Any] = yaml.safe_load(fm) or {}
                             title = meta.get("title", title)
                     except Exception:
                         pass
@@ -336,7 +336,7 @@ class AgentTools:
             if not self._is_safe_read_path(p):
                 return f"Error: Path is outside allowed read directories: {directory}"
                 
-            files: List[str] = []
+            files: list[str] = []
             for item in p.iterdir():
                 if item.name.startswith("."): continue
                 type_str = "DIR" if item.is_dir() else "FILE"
@@ -489,7 +489,7 @@ class AgentTools:
         import unicodedata
         try:
             query_lower = unicodedata.normalize("NFC", query).strip().lower()
-            matches: List[str] = []
+            matches: list[str] = []
 
             for md_path in self.config.wiki_path.rglob("*.md"):
                 if ".stfolder" in md_path.parts or ".git" in md_path.parts:
@@ -580,7 +580,7 @@ class AgentTools:
 
             # Load existing timeline data
             timeline_file = self.config.timelines / "timelines.json"
-            existing: list = []
+            existing: list[Any] = []
             if timeline_file.exists():
                 import json as _json
                 with timeline_file.open("r", encoding="utf-8") as f:

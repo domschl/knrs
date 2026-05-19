@@ -13,7 +13,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from config import KnrsConfig
 from agent.tools import AgentTools
@@ -53,7 +53,7 @@ class ResearchAgent:
 
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
         """Find and repair JSON blocks containing 'tool' and 'args'."""
-        calls: List[Dict[str, Any]] = []
+        calls: list[dict[str, Any]] = []
 
         # if 'tool' in text[:50] or 'TOOL' in text[:50]:
         #     print("----------------------------------")
@@ -82,7 +82,7 @@ class ResearchAgent:
             potential_blocks.append(b.group(1).strip())
 
         # Also just find anything that looks like a balanced { ... } or [ ... ]
-        def extract_balanced(text_to_search: str) -> List[str]:
+        def extract_balanced(text_to_search: str) -> list[str]:
             results = []
             start_idx = 0
             while start_idx < len(text_to_search):
@@ -121,7 +121,7 @@ class ResearchAgent:
         if not potential_blocks:
             potential_blocks.extend(extract_balanced(text))
 
-        def try_parse(raw: str) -> Optional[Dict[str, Any]]:
+        def try_parse(raw: str) -> dict[str, Any] | None:
             # Clean up obvious trailing garbage
             raw = raw.strip()
             # Try direct JSON
@@ -177,7 +177,7 @@ class ResearchAgent:
     def execute_tool(self, tool_call: dict[str, Any]) -> str:
         """Execute a tool and append result to history."""
         tool_name = tool_call.get("tool")
-        args: Dict[str, Any] = tool_call.get("args", {})
+        args: dict[str, Any] = tool_call.get("args", {})
         
         # Fallback if the agent mistakenly put arguments at the top level instead of in 'args'
         if not args or not isinstance(args, dict):
@@ -316,7 +316,7 @@ class ResearchAgent:
 
         self.state.append_user(user_message)
 
-        all_tool_actions: List[Dict[str, Any]] = []
+        all_tool_actions: list[dict[str, Any]] = []
         final_text = ""
         files_written_before = set(self.state.written_files)
         _write_nudge_sent = False  # only nudge once per turn
