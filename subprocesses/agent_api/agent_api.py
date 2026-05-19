@@ -6,6 +6,7 @@
 # 2. agent/prompts.py (The text-based instructions for raw LLMs)
 # 3. subprocesses/agent_api/agent_api.py (The JSON schema array)
 # 4. subprocesses/agent_macos/agent_macos.py (The JSON schema array)
+# 5. subprocesses/agent_hf/agent_hf.py (The JSON schema array)
 # =========================================================================
 
 from __future__ import annotations
