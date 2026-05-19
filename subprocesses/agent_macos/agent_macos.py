@@ -12,6 +12,7 @@ from __future__ import annotations
 
 
 import json
+import re
 import signal
 import sys
 import logging
@@ -417,43 +418,97 @@ class MLXAgentEngine:
             text = str(output)
         text = text.strip()
 
-        # Check for native tool calls if supported by tokenizer
-        tokenizer = getattr(self.processor, "tokenizer", self.processor)
-        if hasattr(tokenizer, "tool_call_start") and hasattr(tokenizer, "tool_parser"):
-            tool_start_tok = tokenizer.tool_call_start
-            tool_end_tok = getattr(tokenizer, "tool_call_end", None)
+        # Check for native tool calls
+        parsed_calls: List[Dict[str, Any]] = []
 
-            if tool_start_tok in text:
+        # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
+        if "<tool_call>" in text:
+            qwen_matches = re.finditer(r'<tool_call>\s*<function=(\w+)>\s*(.*?)\s*</tool_call>', text, re.DOTALL)
+            for qwen_match in qwen_matches:
+                name = qwen_match.group(1)
+                param_str = qwen_match.group(2)
+                args = {}
+                param_matches = re.finditer(r'<parameter=(\w+)>\s*(.*?)(?=\s*<parameter=|\s*$)', param_str, re.DOTALL)
+                for pm in param_matches:
+                    p_name = pm.group(1)
+                    p_val = pm.group(2).strip()
+                    try:
+                        args[p_name] = json.loads(p_val)
+                    except Exception:
+                        args[p_name] = p_val
+                parsed_calls.append({
+                    "name": name,
+                    "arguments": args
+                })
+
+        # 2. Parse Gemma-style tool calls: <|tool_call|>call:(\w+)({...})<tool_call|>
+        if "<|tool_call|>" in text:
+            gemma_matches = re.finditer(r'<\|tool_call\|\>call:(\w+)(\{.*?\})(?:<tool_call\|>|<\|tool_call\|>)', text, re.DOTALL)
+            for g_match in gemma_matches:
+                name = g_match.group(1)
+                args_str = g_match.group(2)
                 try:
-                    start_idx = text.find(tool_start_tok) + len(tool_start_tok)
-                    if tool_end_tok and tool_end_tok in text:
-                        end_idx = text.find(tool_end_tok)
-                        raw_tool = text[start_idx:end_idx].strip()
-                    else:
-                        raw_tool = text[start_idx:].strip()
+                    args = json.loads(args_str)
+                except Exception:
+                    try:
+                        import yaml
+                        args = yaml.safe_load(args_str)
+                    except Exception:
+                        args = args_str
+                
+                if isinstance(args, dict):
+                    parsed_calls.append({
+                        "name": name,
+                        "arguments": args
+                    })
 
-                    parsed_calls = tokenizer.tool_parser(raw_tool)
-                    if parsed_calls:
-                        if isinstance(parsed_calls, dict):
-                            parsed_calls = [parsed_calls]
+        # 3. Fallback to tokenizer's tool parser if available and we haven't parsed anything yet
+        if not parsed_calls:
+            tokenizer = getattr(self.processor, "tokenizer", self.processor)
+            if hasattr(tokenizer, "tool_call_start") and hasattr(tokenizer, "tool_parser"):
+                tool_start_tok = tokenizer.tool_call_start
+                tool_end_tok = getattr(tokenizer, "tool_call_end", None)
 
-                        formatted_blocks = []
-                        for call in parsed_calls:
-                            name = call.get("name")
-                            arguments = call.get("arguments") or {}
-                            if name:
-                                tool_json = {
-                                    "tool": name,
-                                    "args": arguments
-                                }
-                                formatted_blocks.append(
-                                    f"\n```json\n{json.dumps(tool_json, indent=2)}\n```"
-                                )
+                if tool_start_tok in text:
+                    try:
+                        start_idx = text.find(tool_start_tok) + len(tool_start_tok)
+                        if tool_end_tok and tool_end_tok in text:
+                            end_idx = text.find(tool_end_tok)
+                            raw_tool = text[start_idx:end_idx].strip()
+                        else:
+                            raw_tool = text[start_idx:].strip()
 
-                        if formatted_blocks:
-                            text += "\n" + "\n".join(formatted_blocks)
-                except Exception as e:
-                    logger.warning(f"Failed to parse native tool call: {e}")
+                        parsed = tokenizer.tool_parser(raw_tool)
+                        if parsed:
+                            if isinstance(parsed, dict):
+                                parsed = [parsed]
+                            for item in parsed:
+                                name = item.get("name")
+                                arguments = item.get("arguments") or {}
+                                if name:
+                                    parsed_calls.append({
+                                        "name": name,
+                                        "arguments": arguments
+                                    })
+                    except Exception as e:
+                        logger.warning(f"Tokenizer tool parser failed: {e}")
+
+        # Format parsed calls into standard JSON blocks and append to text
+        if parsed_calls:
+            formatted_blocks = []
+            for call in parsed_calls:
+                name = call.get("name")
+                arguments = call.get("arguments") or {}
+                if name:
+                    tool_json = {
+                        "tool": name,
+                        "args": arguments
+                    }
+                    formatted_blocks.append(
+                        f"\n```json\n{json.dumps(tool_json, indent=2)}\n```"
+                    )
+            if formatted_blocks:
+                text += "\n" + "\n".join(formatted_blocks)
 
         return text.strip()
 
