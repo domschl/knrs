@@ -5,7 +5,7 @@ import os
 import logging
 from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
-from typing import Any, Dict, List, Set, Optional
+from typing import Any
 
 from paths import knrs_config_file, resolve
 
@@ -203,7 +203,7 @@ def print_config(cfg: KnrsConfig) -> None:
     table.add_column("Key", style="bold cyan")
     table.add_column("Value", style="white")
 
-    rows: List[tuple[str, str]] = [
+    rows: list[tuple[str, str]] = [
         ("calibre_path", str(cfg.calibre_path)),
         ("notes_path", str(cfg.notes_path)),
         ("knrs_data", str(cfg.knrs_data)),

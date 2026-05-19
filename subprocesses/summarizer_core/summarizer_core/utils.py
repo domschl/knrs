@@ -4,13 +4,13 @@ import os
 import json
 import time
 import logging
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Type
 
 logger = logging.getLogger("summarizer_core.utils")
 
 # ── Runtime config validation ──────────────────────────────────────────────────
 
-def validate_config(cfg: Dict[str, Any], schema: Dict[str, str]) -> List[str]:
+def validate_config(cfg: dict[str, Any], schema: dict[str, str]) -> list[str]:
     """Validate a config dict against a simple type schema.
 
     Args:
@@ -22,8 +22,8 @@ def validate_config(cfg: Dict[str, Any], schema: Dict[str, str]) -> List[str]:
     Returns:
         A list of error strings (empty = valid).
     """
-    errors: List[str] = []
-    type_map: Dict[str, Type[Any]] = {"str": str, "int": int, "float": float, "bool": bool}
+    errors: list[str] = []
+    type_map: dict[str, Type[Any]] = {"str": str, "int": int, "float": float, "bool": bool}
 
     for key, type_name in schema.items():
         is_optional = type_name.endswith("?")
@@ -53,7 +53,7 @@ def validate_config(cfg: Dict[str, Any], schema: Dict[str, str]) -> List[str]:
 
 # ── Platform config helpers ────────────────────────────────────────────────────
 
-def get_platform_config(config_name: str, default_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def get_platform_config(config_name: str, default_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Load a backend config from ~/.config/knrs/<config_name>.
 
     If the file does not exist, it is created from *default_config*.
@@ -95,7 +95,7 @@ def get_platform_config(config_name: str, default_config: Optional[Dict[str, Any
     return default.copy()
 
 
-def update_platform_config(config_name: str, key: str, value: Any, default_config: Optional[Dict[str, Any]] = None) -> bool:
+def update_platform_config(config_name: str, key: str, value: Any, default_config: dict[str, Any] | None = None) -> bool:
     """Update a single key in ~/.config/knrs/<config_name>.
 
     If the file does not exist, it is created from *default_config* first.
@@ -106,7 +106,7 @@ def update_platform_config(config_name: str, key: str, value: Any, default_confi
     try:
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
-                raw: Dict[str, Any] = json.load(f)
+                raw: dict[str, Any] = json.load(f)
         else:
             raw = (default_config or {}).copy()
             os.makedirs(os.path.dirname(config_file), exist_ok=True)
@@ -124,7 +124,7 @@ def update_platform_config(config_name: str, key: str, value: Any, default_confi
         return False
 
 
-def get_llm_server_config() -> Dict[str, Any]:
+def get_llm_server_config() -> dict[str, Any]:
     """Returns the shared LLM server configuration."""
     return get_platform_config("llm_server.json", {
         "url": "http://localhost:8180",

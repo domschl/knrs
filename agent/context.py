@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,10 @@ DEFAULT_MAX_CONTEXT_CHARS = 200_000
 class ConversationState:
     """Mutable state for one REPL conversation session."""
 
-    history: List[Dict[str, str]] = field(default_factory=list)
-    call_history: List[Dict[str, Any]] = field(default_factory=list)
+    history: list[dict[str, str]] = field(default_factory=list)
+    call_history: list[dict[str, Any]] = field(default_factory=list)
     consecutive_blocks: int = 0
-    written_files: List[str] = field(default_factory=list)
+    written_files: list[str] = field(default_factory=list)
 
     # ── helpers ────────────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ def trim_history(
     middle = state.history[1:-tail_count] if system_msg else state.history[:-tail_count]
 
     # Build a compact summary of the middle section.
-    summary_parts: List[str] = []
+    summary_parts: list[str] = []
     for msg in middle:
         role = msg["role"]
         content = msg.get("content", "")
@@ -98,7 +98,7 @@ def trim_history(
         + "\n".join(summary_parts)
     )
 
-    new_history: List[Dict[str, str]] = []
+    new_history: list[dict[str, str]] = []
     if system_msg:
         new_history.append(system_msg)
     new_history.append({"role": "user", "content": summary_text})

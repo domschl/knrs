@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Type
 
 from config import KnrsConfig
 
@@ -60,7 +60,7 @@ class AgentSession:
 
     def __init__(self, config: KnrsConfig) -> None:
         self.config: KnrsConfig = config
-        self._proc: Optional[subprocess.Popen[str]] = None
+        self._proc: subprocess.Popen[str] | None = None
 
     # ── Context manager ────────────────────────────────────────────────────
 
@@ -98,9 +98,9 @@ class AgentSession:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         if self._proc is not None:
             try:
@@ -115,7 +115,7 @@ class AgentSession:
 
     def generate(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
@@ -149,7 +149,7 @@ class AgentSession:
         if not response_line:
             raise RuntimeError("Agent subprocess closed stdout unexpectedly")
 
-        response: Dict[str, Any] = json.loads(response_line.strip())
+        response: dict[str, Any] = json.loads(response_line.strip())
 
         if "error" in response:
             raise RuntimeError(f"Agent backend error: {response['error']}")
