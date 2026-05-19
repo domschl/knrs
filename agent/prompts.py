@@ -5,6 +5,7 @@
 # 1. agent/tools.py (The dynamic dispatch & implementation)
 # 2. agent/prompts.py (The text-based instructions for raw LLMs)
 # 3. subprocesses/agent_api/agent_api.py (The JSON schema array)
+# 4. subprocesses/agent_macos/agent_macos.py (The JSON schema array)
 # =========================================================================
 
 SYSTEM_PROMPT = """You are an advanced autonomous research agent.
