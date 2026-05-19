@@ -363,6 +363,45 @@ tools: List[Dict[str, Any]] = [
     }
 ]
 
+def coerce_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    # Find the tool in the tools list
+    tool_schema = None
+    for t in tools:
+        if t.get("function", {}).get("name") == name:
+            tool_schema = t.get("function", {})
+            break
+            
+    if not tool_schema:
+        return args
+        
+    properties = tool_schema.get("parameters", {}).get("properties", {})
+    coerced = {}
+    for k, v in args.items():
+        prop_type = properties.get(k, {}).get("type")
+        if prop_type == "integer":
+            try:
+                coerced[k] = int(v)
+            except Exception:
+                coerced[k] = v
+        elif prop_type == "number":
+            try:
+                coerced[k] = float(v)
+            except Exception:
+                coerced[k] = v
+        elif prop_type == "boolean":
+            if isinstance(v, str):
+                if v.lower() in ("true", "1", "yes"):
+                    coerced[k] = True
+                elif v.lower() in ("false", "0", "no"):
+                    coerced[k] = False
+                else:
+                    coerced[k] = v
+            else:
+                coerced[k] = bool(v)
+        else:
+            coerced[k] = v
+    return coerced
+
 class MLXAgentEngine:
     def __init__(self, config: Dict[str, Any]) -> None:
         model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
@@ -510,9 +549,10 @@ class MLXAgentEngine:
                 name = call.get("name")
                 arguments = call.get("arguments") or {}
                 if name:
+                    coerced_args = coerce_tool_args(name, arguments)
                     tool_json = {
                         "tool": name,
-                        "args": arguments
+                        "args": coerced_args
                     }
                     formatted_blocks.append(
                         f"\n```json\n{json.dumps(tool_json, indent=2)}\n```"
