@@ -432,10 +432,20 @@ class MLXAgentEngine:
                 for pm in param_matches:
                     p_name = pm.group(1)
                     p_val = pm.group(2).strip()
+                    
+                    if p_val.endswith("</parameter>"):
+                        p_val = p_val[:-12].strip()
+                        
                     try:
                         args[p_name] = json.loads(p_val)
                     except Exception:
-                        args[p_name] = p_val
+                        try:
+                            if "." in p_val:
+                                args[p_name] = float(p_val)
+                            else:
+                                args[p_name] = int(p_val)
+                        except Exception:
+                            args[p_name] = p_val
                 parsed_calls.append({
                     "name": name,
                     "arguments": args
