@@ -138,6 +138,11 @@ class AgentTools:
     def vector_search(self, query: str, top_k: int = 5) -> str:
         """Semantic search across indexed files."""
         try:
+            try:
+                top_k = int(top_k)
+            except Exception as e:
+                logger.warning(f"Failed to cast top_k parameter '{top_k}' (type {type(top_k).__name__}) to int: {e}")
+                top_k = 5
             from vector.search import KnrsSearcher, get_context_aware_text
             from calibre.converter import _split_frontmatter
             import yaml
@@ -180,6 +185,16 @@ class AgentTools:
     def file_read(self, path: str, start_line: int = 1, end_line: int = -1) -> str:
         """Read lines from a markdown file."""
         try:
+            try:
+                start_line = int(start_line)
+            except Exception as e:
+                logger.warning(f"Failed to cast start_line parameter '{start_line}' (type {type(start_line).__name__}) to int: {e}")
+                start_line = 1
+            try:
+                end_line = int(end_line)
+            except Exception as e:
+                logger.warning(f"Failed to cast end_line parameter '{end_line}' (type {type(end_line).__name__}) to int: {e}")
+                end_line = -1
             p = self._resolve_read_path(path)
             if not p or not p.exists():
                 return f"Error: File not found: {path}"
@@ -333,6 +348,18 @@ class AgentTools:
     def timeline_query(self, start_year: float | None = None, end_year: float | None = None, context_filters: list[str] | None = None, keywords: list[str] | None = None) -> str:
         """Query timeline database and return formatted table."""
         try:
+            if start_year is not None:
+                try:
+                    start_year = float(start_year)
+                except Exception as e:
+                    logger.warning(f"Failed to cast start_year parameter '{start_year}' (type {type(start_year).__name__}) to float: {e}")
+                    start_year = None
+            if end_year is not None:
+                try:
+                    end_year = float(end_year)
+                except Exception as e:
+                    logger.warning(f"Failed to cast end_year parameter '{end_year}' (type {type(end_year).__name__}) to float: {e}")
+                    end_year = None
             from timelines.extractor import query_timeline_data, format_timeline_as_markdown_table
             timeline_file = self.config.timelines / "timelines.json"
             
