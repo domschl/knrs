@@ -52,6 +52,8 @@ from summarizer_core.markdown import parse_markdown, assemble_markdown
 from summarizer_core.summarizer import chunked_summarize
 from summarizer_core.utils import get_platform_config, watchdog
 
+# new: https://huggingface.co/mlx-community/gemma-4-26B-A4B-it-assistant-bf16
+
 # Constants
 VERSION = "0.1.0"
 DEFAULT_CONFIG: Dict[str, Any] = {
