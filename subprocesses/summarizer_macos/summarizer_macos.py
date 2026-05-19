@@ -7,6 +7,7 @@ import signal
 import logging
 import threading
 import hashlib
+import json
 from typing import Any, Dict, List, Optional, Union
 
 # Setup logging (to stderr so stdout stays clean for capabilities)
@@ -45,6 +46,7 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 from mlx_vlm import load, generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load_config
+from mlx_vlm.speculative.drafters import load_drafter
 
 from summarizer_core.engine import BaseEngine
 from summarizer_core.cache import WorkCache
@@ -52,35 +54,49 @@ from summarizer_core.markdown import parse_markdown, assemble_markdown
 from summarizer_core.summarizer import chunked_summarize
 from summarizer_core.utils import get_platform_config, watchdog
 
-# new: https://huggingface.co/mlx-community/gemma-4-26B-A4B-it-assistant-bf16
+# new: https://huggingface.co/mlx-community/gemma-4-31B-it-assistant-bf16
 
 # Constants
 VERSION = "0.1.0"
 DEFAULT_CONFIG: Dict[str, Any] = {
     "chunk_size": 200000,
-    "model_id": "mlx-community/gemma-4-26b-a4b-it-4bit",
-    "model_name": "gemma-4-26b-it-mlx"
+    "model_id": "mlx-community/gemma-4-31b-it-4bit",
+    "model_name": "gemma-4-31b-it-mlx",
+    "assistant_id": "mlx-community/gemma-4-31B-it-assistant-bf16"
 }
 
 class MLXEngine(BaseEngine):
     def __init__(self, config: Dict[str, Any]) -> None:
         model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
+        assistant_id: Optional[str] = config.get("assistant_id", DEFAULT_CONFIG.get("assistant_id"))
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)
         self.config_data: Dict[str, Any] = load_config(model_id)
+        self.drafter: Optional[Any] = None
+        if assistant_id:
+            logger.info(f"Loading MTP assistant from {assistant_id}...")
+            self.drafter = load_drafter(assistant_id, kind="mtp")
 
     def format_prompt(self, messages: List[Dict[str, str]]) -> str:
         return apply_chat_template(self.processor, self.config_data, messages, num_images=0)
 
     def generate(self, prompt: str, max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+        gen_kwargs: Dict[str, Any] = {
+            "max_tokens": max_tokens,
+            "temp": temp,
+            "repetition_penalty": repetition_penalty,
+            "kv_bits": 3.5,
+            "kv_quant_scheme": "turboquant",
+            "verbose": False
+        }
+        if self.drafter is not None:
+            gen_kwargs["draft_model"] = self.drafter
+            gen_kwargs["draft_kind"] = "mtp"
+            gen_kwargs["draft_block_size"] = 3
+
         output: Any = generate(
             self.model, self.processor, prompt, [],
-            max_tokens=max_tokens,
-            temp=temp,
-            repetition_penalty=repetition_penalty,
-            kv_bits=3.5,
-            kv_quant_scheme="turboquant",
-            verbose=False
+            **gen_kwargs
         )
         if hasattr(output, "text"):
             text = str(getattr(output, "text"))
@@ -201,9 +217,10 @@ def main() -> None:
             "validated_models": [DEFAULT_CONFIG["model_id"]],
             "available_models": [DEFAULT_CONFIG["model_id"]],
             "parameters": {
-                "chunk_size":  {"type": "int", "min": 1000, "max": 500000},
-                "model_id":    {"type": "str"},
-                "model_name":  {"type": "str"},
+                "chunk_size":   {"type": "int", "min": 1000, "max": 500000},
+                "model_id":     {"type": "str"},
+                "model_name":   {"type": "str"},
+                "assistant_id": {"type": "str"},
             },
         }
         print(json.dumps(cap))
