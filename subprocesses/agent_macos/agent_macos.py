@@ -472,8 +472,11 @@ class MLXAgentEngine:
                     p_name = pm.group(1)
                     p_val = pm.group(2).strip()
                     
-                    if p_val.endswith("</parameter>"):
-                        p_val = p_val[:-12].strip()
+                    while True:
+                        stripped = re.sub(r'</\w+>\s*$', '', p_val).strip()
+                        if stripped == p_val:
+                            break
+                        p_val = stripped
                         
                     try:
                         args[p_name] = json.loads(p_val)
