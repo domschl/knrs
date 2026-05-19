@@ -56,6 +56,8 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 from agent_core.protocol import read_request, write_response, write_error
 from summarizer_core.utils import get_platform_config, watchdog, validate_config
 
+# new: https://ai.google.dev/gemma/docs/mtp/mtp
+
 # ── Config schema ──────────────────────────────────────────────────────────────
 
 CONFIG_FILE = "agent_config_hf.json"
