@@ -43,7 +43,7 @@ from summarizer_core.utils import get_platform_config, get_llm_server_config, wa
 VERSION = "0.1.0"
 DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
-    "model_name": "gemma-4-26B-A4B-it-UD-Q4_K_XL"
+    "model_name": "gemma-4-31b-ud-q4"
 }
 
 class ApiEngine(BaseEngine):
@@ -201,7 +201,7 @@ def main() -> None:
             "type": "summarizer",
             "config_file": "summarizer_config_api.json",
             "platform": "any",
-            "validated_models": ["gemma-4-26B-A4B-it-UD-Q4_K_XL", "gemma-4-31B-it-UD-Q4_K_XL"],
+            "validated_models": ["gemma-4-26B-A4B-it-UD-Q4_K_XL", "gemma-4-31B-it-UD-Q4_K_XL", "gemma-4-31b-ud-q4"],
             "available_models": available_models,
             "parameters": {
                 "chunk_size":  {"type": "int", "min": 1000, "max": 500000},
