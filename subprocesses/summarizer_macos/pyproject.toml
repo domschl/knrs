@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MLX based Gemma 4 summarizer for macOS"
 requires-python = ">=3.13"
 dependencies = [
-    "mlx-vlm>=0.4.3",
+    "mlx-vlm>=0.5.0",
     "pyyaml",
     "rich",
     "summarizer_core",

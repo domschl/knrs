@@ -73,9 +73,10 @@ class MLXEngine(BaseEngine):
         self.model, self.processor = load(model_id)
         self.config_data: dict[str, Any] = load_config(model_id)
         self.drafter: Any | None = None
+        self.draft_kind: str | None = None
         if assistant_id:
             logger.info(f"Loading MTP assistant from {assistant_id}...")
-            self.drafter = load_drafter(assistant_id, kind="mtp")
+            self.drafter, self.draft_kind = load_drafter(assistant_id, kind="mtp")
 
     def format_prompt(self, messages: list[dict[str, str]]) -> str:
         return apply_chat_template(self.processor, self.config_data, messages, num_images=0)
@@ -91,7 +92,7 @@ class MLXEngine(BaseEngine):
         }
         if self.drafter is not None:
             gen_kwargs["draft_model"] = self.drafter
-            gen_kwargs["draft_kind"] = "mtp"
+            gen_kwargs["draft_kind"] = self.draft_kind
             gen_kwargs["draft_block_size"] = 3
 
         output: Any = generate(
