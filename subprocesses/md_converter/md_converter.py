@@ -8,7 +8,7 @@ import argparse
 import logging
 import warnings
 import gc
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Setup logging (to stderr so stdout stays clean for capabilities)
 from rich.console import Console
@@ -29,11 +29,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("md_converter")
 
-DEFAULT_CONFIG: Dict[str, str] = {
+DEFAULT_CONFIG: dict[str, str] = {
     "device": "auto"
 }
 
-def get_platform_config() -> Dict[str, Any]:
+def get_platform_config() -> dict[str, Any]:
     config_file = os.path.expanduser("~/.config/knrs/converter_config_md_converter.json")
     try:
         if os.path.exists(config_file):
@@ -118,7 +118,7 @@ def convert(source_file: str, destination_file: str) -> None:
             total_pages = len(reader.pages)
             chunk_size = 200
             
-            markdown_chunks: List[str] = []
+            markdown_chunks: list[str] = []
             target_dir = os.path.dirname(destination_file)
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir, exist_ok=True)
@@ -186,7 +186,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.capabilities:
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "md_converter",
             "type": "converter",
             "config_file": "converter_config_md_converter.json",

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import List, Dict, Protocol
+from typing import Protocol
 
 
 class BaseAgentEngine(Protocol):
     def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:

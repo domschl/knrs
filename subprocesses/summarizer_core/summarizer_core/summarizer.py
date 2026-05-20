@@ -4,7 +4,9 @@ import math
 import os
 import time
 import logging
-from typing import List, Optional, Union
+from typing import Any, TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Dict
 
 from .engine import BaseEngine
 from .cache import WorkCache
@@ -23,7 +25,7 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
         logger.info(f"Document '{filename}' fits in one chunk. Summarizing directly...")
         prompt_text = f"The following is the full text of '{filepath}'. Please provide a detailed summary:\n\n{content}"
         
-        prompt: Union[str, List[Dict[str, str]]] = prompt_text
+        prompt: str | list[dict[str, str]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted:
@@ -58,7 +60,7 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
         
         prompt_text = f"Briefly summarize this part of document '{filepath}':\n\n{chunk}"
         
-        chunk_prompt: Union[str, List[Dict[str, str]]] = prompt_text
+        chunk_prompt: str | list[dict[str, str]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted_chunk = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted_chunk:
@@ -83,7 +85,7 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
     
     final_prompt_text = f"The following are summaries of segments from '{filepath}'. Please combine them into a single coherent, detailed summary:\n\n{consolidated_text}"
     
-    final_prompt: Union[str, List[Dict[str, str]]] = final_prompt_text
+    final_prompt: str | list[dict[str, str]] = final_prompt_text
     if hasattr(engine, 'format_prompt'):
         formatted_final = engine.format_prompt([{"role": "user", "content": final_prompt_text}])
         if formatted_final:

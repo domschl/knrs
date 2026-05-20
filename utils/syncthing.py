@@ -6,11 +6,11 @@ import urllib.request
 import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-def find_st_root(path: Path) -> Optional[Path]:
+def find_st_root(path: Path) -> Path | None:
     """Climb up from path to find the Syncthing folder root (containing .stfolder)."""
     current = path.resolve()
     while True:
@@ -21,7 +21,7 @@ def find_st_root(path: Path) -> Optional[Path]:
         current = current.parent
     return None
 
-def get_syncthing_info() -> Tuple[Optional[str], Optional[str], Dict[str, str]]:
+def get_syncthing_info() -> tuple[str | None, str | None, dict[str, str]]:
     """
     Parse Syncthing config to get API key, GUI address, and path->id mapping.
     
@@ -67,7 +67,7 @@ def get_syncthing_info() -> Tuple[Optional[str], Optional[str], Dict[str, str]]:
         logger.error("Failed to parse Syncthing config: %s", e)
         return None, None, {}
 
-def get_syncthing_status(path: Path) -> Optional[Dict[str, Any]]:
+def get_syncthing_status(path: Path) -> dict[str, Any] | None:
     """
     Check if a path is in Syncthing and return its sync status.
     

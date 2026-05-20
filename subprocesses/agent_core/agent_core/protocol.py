@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Dict, List, Optional, TextIO
+from typing import Any, TextIO
 
 
-def read_request(stream: Optional[TextIO] = None) -> Optional[Dict[str, Any]]:
+def read_request(stream: TextIO | None = None) -> dict[str, Any] | None:
     """Read one JSON-line request from stdin (or given stream).
 
     Returns None on EOF (parent closed stdin → time to exit).
@@ -18,7 +18,7 @@ def read_request(stream: Optional[TextIO] = None) -> Optional[Dict[str, Any]]:
     return json.loads(line.strip())
 
 
-def write_response(text: str, stream: Optional[TextIO] = None) -> None:
+def write_response(text: str, stream: TextIO | None = None) -> None:
     """Write a successful response to stdout (or given stream)."""
     if stream is None:
         stream = sys.stdout
@@ -26,7 +26,7 @@ def write_response(text: str, stream: Optional[TextIO] = None) -> None:
     stream.flush()
 
 
-def write_error(message: str, stream: Optional[TextIO] = None) -> None:
+def write_error(message: str, stream: TextIO | None = None) -> None:
     """Write an error response to stdout (or given stream)."""
     if stream is None:
         stream = sys.stdout
@@ -35,10 +35,10 @@ def write_error(message: str, stream: Optional[TextIO] = None) -> None:
 
 
 def send_request(
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     max_tokens: int = 10000,
     temperature: float = 0.2,
-    stream: Optional[TextIO] = None,
+    stream: TextIO | None = None,
 ) -> None:
     """Send a request to a subprocess's stdin (parent-side helper)."""
     if stream is None:
@@ -52,7 +52,7 @@ def send_request(
     stream.flush()
 
 
-def read_response(stream: Optional[TextIO] = None) -> Dict[str, Any]:
+def read_response(stream: TextIO | None = None) -> dict[str, Any]:
     """Read one JSON-line response from a subprocess's stdout (parent-side helper).
 
     Returns a dict with either {"text": "..."} or {"error": "..."}.
