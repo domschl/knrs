@@ -18,7 +18,7 @@ import signal
 import sys
 import logging
 import threading
-from typing import Any, Dict, List, TypedDict
+from typing import Any, TypedDict
 
 # Setup logging (to stderr so stdout stays clean for protocol)
 from rich.logging import RichHandler
@@ -73,7 +73,7 @@ class AgentMacosConfig(TypedDict):
     default_max_tokens: int
     default_temperature: float
 
-CONFIG_SCHEMA: Dict[str, str] = {
+CONFIG_SCHEMA: dict[str, str] = {
     "model_id": "str",
     "kv_bits": "float?",
     "kv_quant_scheme": "str?",
@@ -97,7 +97,7 @@ DEFAULT_CONFIG_ALT: AgentMacosConfig = {
     "default_temperature": 0.2,
 }
 
-tools: List[Dict[str, Any]] = [
+tools: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -364,7 +364,7 @@ tools: List[Dict[str, Any]] = [
     }
 ]
 
-def coerce_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+def coerce_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     # Find the tool in the tools list
     tool_schema = None
     for t in tools:
@@ -404,7 +404,7 @@ def coerce_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     return coerced
 
 class MLXAgentEngine:
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         model_id: str = config.get("model_id", DEFAULT_CONFIG["model_id"])
         self.kv_bits: float | None = config.get("kv_bits", DEFAULT_CONFIG["kv_bits"])
         self.kv_quant_scheme: str | None = config.get("kv_quant_scheme", None)
@@ -413,17 +413,17 @@ class MLXAgentEngine:
 
         logger.info(f"Loading MLX model from {model_id}...")
         self.model, self.processor = load(model_id)
-        self.config_data: Dict[str, Any] = load_config(model_id)
+        self.config_data: dict[str, Any] = load_config(model_id)
         logger.info("Model loaded successfully.")
 
     def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
         # Normalize role names
-        normalized: List[Dict[str, str]] = []
+        normalized: list[dict[str, str]] = []
         for m in messages:
             role = m["role"]
             if role == "model":
@@ -459,7 +459,7 @@ class MLXAgentEngine:
         text = text.strip()
 
         # Check for native tool calls
-        parsed_calls: List[Dict[str, Any]] = []
+        parsed_calls: list[dict[str, Any]] = []
 
         # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
         if "<tool_call>" in text:
@@ -578,7 +578,7 @@ def run_persistent(engine: MLXAgentEngine) -> None:
             logger.info("Stdin closed, shutting down.")
             break
 
-        messages: List[Dict[str, str]] = req.get("messages", [])
+        messages: list[dict[str, str]] = req.get("messages", [])
         max_tokens: int = req.get("max_tokens", 10000)
         temperature: float = req.get("temperature", 0.2)
 
@@ -602,7 +602,7 @@ def main() -> None:
 
     if args.capabilities:
         config = get_platform_config(CONFIG_FILE, DEFAULT_CONFIG)
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "agent_macos",
             "type": "agent",
             "config_file": CONFIG_FILE,

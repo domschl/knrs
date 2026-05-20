@@ -8,7 +8,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 
@@ -26,7 +26,7 @@ class SearchResult:
     text: str
     score: float
     chunk_index: int = 0
-    query_embedding: Optional[np.ndarray] = None
+    query_embedding: np.ndarray | None = None
 
     @property
     def source_label(self) -> str:
@@ -38,10 +38,10 @@ class SearchResult:
         """Return the path without the source prefix."""
         return self.path.split(":", 1)[1] if ":" in self.path else self.path
 
-def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> Tuple[str, int, int]:
+def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> tuple[str, int, int]:
     from calibre.converter import _split_frontmatter
     
-    file_path: Optional[Path] = None
+    file_path: Path | None = None
     if result.source_label == "books":
         file_path = searcher.config.markdown_books / result.bare_path
     elif result.source_label == "wiki":
@@ -89,7 +89,7 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> Tupl
     prev_max = chunk_start - prev_chunk
     next_max = prev_max + chunk_size
     
-    borders: Set[str] = {'.', '!', '?', '\n', '。', '！', '？'}
+    borders: set[str] = {'.', '!', '?', '\n', '。', '！', '？'}
     act_start = prev_max
     for ind in range(prev_max - 1, -1, -1):
         if extended_text[ind] in borders:
@@ -115,13 +115,13 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> Tupl
         start_line = end_line = 0
     return result_text, start_line, end_line
 
-def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearcher, raw: bool = False, cutoff: float = 0.5, session: Optional[EmbedderSession] = None) -> str:
+def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearcher, raw: bool = False, cutoff: float = 0.5, session: EmbedderSession | None = None) -> str:
     context_length = 64
     context_steps = 32
     text_len = len(text)
     
-    clr: List[str] = []
-    snippet_ranges: List[Tuple[int, int]] = []
+    clr: list[str] = []
+    snippet_ranges: list[tuple[int, int]] = []
     for i in range(0, text_len, context_steps):
         i0 = max(0, i - context_length // 2)
         i1 = min(text_len, i + context_length // 2 + (context_length % 2))
@@ -168,9 +168,9 @@ def get_significance(text: str, query_embedding: np.ndarray, searcher: KnrsSearc
         
     char_scores = np.divide(char_scores, char_counts, out=np.zeros_like(char_scores), where=char_counts!=0)
     
-    result_parts: List[str] = []
+    result_parts: list[str] = []
     is_highlighted = False
-    current_part: List[str] = []
+    current_part: list[str] = []
     
     for i, char in enumerate(text):
         high = char_scores[i] >= cutoff
@@ -201,8 +201,8 @@ class KnrsSearcher:
         self.index_file: Path = self.db_dir / "index.npy"
         self.meta_file: Path = self.db_dir / "index.json"
         
-        self.embeddings: Optional[np.ndarray] = None
-        self.metadata: Optional[Dict[str, Any]] = None
+        self.embeddings: np.ndarray | None = None
+        self.metadata: dict[str, Any] | None = None
         
     def _load(self) -> None:
         if self.embeddings is None:
@@ -221,7 +221,7 @@ class KnrsSearcher:
             except Exception as e:
                 raise RuntimeError(f"Failed to load vector index: {e}. Please run indexer to rebuild.")
 
-    def search(self, query: str, top_k: int = 5) -> List[SearchResult]:
+    def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
         """Perform a semantic search for the given query."""
         self._load()
         
@@ -244,11 +244,11 @@ class KnrsSearcher:
         # Get top-k indices
         top_results = np.argpartition(-cos_scores, range(min(top_k, len(cos_scores))))[:top_k]
         
-        results: List[SearchResult] = []
+        results: list[SearchResult] = []
         for idx_raw in top_results:
             idx = int(idx_raw)
             score = float(cos_scores[idx])
-            meta: Dict[str, Any] = self.metadata['chunks'][idx]
+            meta: dict[str, Any] = self.metadata['chunks'][idx]
             full_text: str = self.metadata['full_texts'][idx]
             
             results.append(SearchResult(

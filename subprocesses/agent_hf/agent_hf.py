@@ -18,7 +18,7 @@ import logging
 import threading
 import os
 import re
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, TypedDict
 
 # Prevent fragmentation and XPU allocation crashes during model load
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -82,7 +82,7 @@ class AgentHfConfig(TypedDict):
     default_temperature: float
     load_in_4bit: bool
 
-CONFIG_SCHEMA: Dict[str, str] = {
+CONFIG_SCHEMA: dict[str, str] = {
     "model_id": "str",
     "device": "str",
     "torch_dtype": "str",
@@ -101,7 +101,7 @@ DEFAULT_CONFIG: AgentHfConfig = {
 }
 
 
-tools: List[Dict[str, Any]] = [
+tools: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -368,7 +368,7 @@ tools: List[Dict[str, Any]] = [
     }
 ]
 
-def coerce_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+def coerce_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     # Find the tool in the tools list
     tool_schema = None
     for t in tools:
@@ -421,7 +421,7 @@ class HFAgentEngine:
             return "mps"
         return "cpu"
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -430,7 +430,7 @@ class HFAgentEngine:
         dtype_str: str = config.get("torch_dtype", DEFAULT_CONFIG["torch_dtype"])
 
         # Resolve torch dtype
-        torch_dtype: Union[str, torch.dtype]
+        torch_dtype: str | torch.dtype
         if dtype_str == "auto":
             torch_dtype = "auto"
         elif hasattr(torch, dtype_str) and isinstance(getattr(torch, dtype_str), torch.dtype):
@@ -471,14 +471,14 @@ class HFAgentEngine:
 
     def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
         import torch
 
         # Normalize role names
-        normalized: List[Dict[str, str]] = []
+        normalized: list[dict[str, str]] = []
         for m in messages:
             role = m["role"]
             if role == "model":
@@ -516,7 +516,7 @@ class HFAgentEngine:
         text = response.strip()
         
         # Check for native tool calls
-        parsed_calls: List[Dict[str, Any]] = []
+        parsed_calls: list[dict[str, Any]] = []
 
         # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
         if "<tool_call>" in text:
@@ -640,7 +640,7 @@ def run_persistent(engine: HFAgentEngine) -> None:
             logger.info("Stdin closed, shutting down.")
             break
 
-        messages: List[Dict[str, str]] = req.get("messages", [])
+        messages: list[dict[str, str]] = req.get("messages", [])
         max_tokens: int = req.get("max_tokens", 10000)
         temperature: float = req.get("temperature", 0.2)
 
@@ -664,7 +664,7 @@ def main() -> None:
 
     if args.capabilities:
         config = get_platform_config(CONFIG_FILE, DEFAULT_CONFIG)
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "agent_hf",
             "type": "agent",
             "config_file": CONFIG_FILE,

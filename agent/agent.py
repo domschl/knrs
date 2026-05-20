@@ -13,7 +13,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from config import KnrsConfig
 from agent.tools import AgentTools
@@ -52,9 +52,14 @@ class ResearchAgent:
     # ── tool-call extraction (unchanged) ─────────────────────────────
 
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
+<<<<<<< HEAD
         """Find and repair JSON, Qwen XML, or Gemma native tool calls."""
         calls: List[Dict[str, Any]] = []
         temp_text = text
+=======
+        """Find and repair JSON blocks containing 'tool' and 'args'."""
+        calls: list[dict[str, Any]] = []
+>>>>>>> 29073f0a823c5d8d8c219cf1e74f9ad92f888002
 
         # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
         if "<tool_call>" in text:
@@ -127,7 +132,7 @@ class ResearchAgent:
             potential_blocks.append(b.group(1).strip())
 
         # Also just find anything that looks like a balanced { ... } or [ ... ]
-        def extract_balanced(text_to_search: str) -> List[str]:
+        def extract_balanced(text_to_search: str) -> list[str]:
             results = []
             start_idx = 0
             while start_idx < len(text_to_search):
@@ -166,7 +171,7 @@ class ResearchAgent:
         if not potential_blocks:
             potential_blocks.extend(extract_balanced(temp_text))
 
-        def try_parse(raw: str) -> Optional[Dict[str, Any]]:
+        def try_parse(raw: str) -> dict[str, Any] | None:
             # Clean up obvious trailing garbage
             raw = raw.strip()
             # Try direct JSON
@@ -222,7 +227,7 @@ class ResearchAgent:
     def execute_tool(self, tool_call: dict[str, Any]) -> str:
         """Execute a tool and append result to history."""
         tool_name = tool_call.get("tool")
-        args: Dict[str, Any] = tool_call.get("args", {})
+        args: dict[str, Any] = tool_call.get("args", {})
         
         # Fallback if the agent mistakenly put arguments at the top level instead of in 'args'
         if not args or not isinstance(args, dict):
@@ -361,7 +366,7 @@ class ResearchAgent:
 
         self.state.append_user(user_message)
 
-        all_tool_actions: List[Dict[str, Any]] = []
+        all_tool_actions: list[dict[str, Any]] = []
         final_text = ""
         files_written_before = set(self.state.written_files)
         _write_nudge_sent = False  # only nudge once per turn

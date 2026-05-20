@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import requests
@@ -33,24 +33,24 @@ logger = logging.getLogger("embedder_api")
 from summarizer_core.utils import get_platform_config, get_llm_server_config, watchdog
 
 # Constants
-DEFAULT_LOCAL_CONFIG: Dict[str, Any] = {
+DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
     "model_name": "embeddinggemma-300M-Q8_0",
     "batch_size": 1024
 }
 
-def _embed(url: str, api_key: Optional[str], model: str, input_path: Path, output_path: Path) -> None:
+def _embed(url: str, api_key: str | None, model: str, input_path: Path, output_path: Path) -> None:
     with input_path.open("r", encoding="utf-8") as f:
-        texts: List[str] = json.load(f)
+        texts: list[str] = json.load(f)
     if not texts:
         np.save(str(output_path), np.array([], dtype=np.float32))
         return
 
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    headers: dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     
     # Use standard OpenAI-compatible embeddings endpoint
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "model": model,
         "input": texts
     }
@@ -58,9 +58,9 @@ def _embed(url: str, api_key: Optional[str], model: str, input_path: Path, outpu
     try:
         response = requests.post(f"{url}/v1/embeddings", json=payload, headers=headers)
         response.raise_for_status()
-        data: Dict[str, Any] = response.json()
+        data: dict[str, Any] = response.json()
         
-        embeddings: List[List[float]]
+        embeddings: list[list[float]]
         # OpenAI format: {"data": [{"embedding": [...], "index": 0}, ...]}
         if "data" in data and isinstance(data["data"], list):
             # Sort by index to ensure order if not guaranteed
@@ -118,7 +118,7 @@ def main() -> None:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         
-        available_models: List[str] = []
+        available_models: list[str] = []
         try:
             response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
             response.raise_for_status()
@@ -127,7 +127,7 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Failed to query {url}/v1/models: {e}")
 
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "embedder_api",
             "type": "embedder",
             "config_file": "embedder_config_api.json",

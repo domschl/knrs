@@ -11,7 +11,7 @@ import logging
 import threading
 import hashlib
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # Suppress KeyboardInterrupt globally
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -57,14 +57,14 @@ for handler in logging.root.handlers:
 
 # Constants
 VERSION = "0.1.0"
-DEFAULT_CONFIG: Dict[str, Any] = {
+DEFAULT_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
     "model_name": "gemma-4-31b-it",
     "api_key": "",
     "rate_blocked_until": ""
 }
 
-def get_platform_config() -> Dict[str, Any]:
+def get_platform_config() -> dict[str, Any]:
     # Local specialized config loader since it modifies the config too
     config_file = os.path.expanduser("~/.config/knrs/summarizer_config_gc_gemma4_31b.json")
     try:
@@ -120,7 +120,7 @@ def check_rate_limit() -> None:
             pass
         break
 
-def parse_retry_delay(exception: Exception) -> Optional[float]:
+def parse_retry_delay(exception: Exception) -> float | None:
     try:
         if hasattr(exception, "details") and exception.details:
             for detail in exception.details:
@@ -141,7 +141,7 @@ class GemmaEngine(BaseEngine):
         self.min_delay: float = 4.1
         self.backoff: float = 10
 
-    def generate(self, prompt: Union[str, List[Dict[str, str]]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         attempts = 0
         max_attempts = 10
 
@@ -196,7 +196,7 @@ class GemmaEngine(BaseEngine):
                 raise e
         raise Exception("Max retry attempts reached.")
 
-def summarize_file(source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
+def summarize_file(source_file: str, destination_file: str, config: dict[str, Any], summary_max_tokens: int) -> None:
     api_key: str = config.get("api_key", "")
     chunk_size: int = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
     model_name: str = config.get("model_name", DEFAULT_CONFIG["model_name"])
@@ -217,7 +217,7 @@ def summarize_file(source_file: str, destination_file: str, config: Dict[str, An
     engine = GemmaEngine(api_key, model_name)
     summary_text = chunked_summarize(engine, md_text, source_file, chunk_size, doc_hash, final_sum_tokens=summary_max_tokens)
     
-    sum_metadata: Dict[str, Any] = {}
+    sum_metadata: dict[str, Any] = {}
     if metadata:
         for key in ['title', 'authors', 'tags', 'uuid']:
             if key in metadata: sum_metadata[key] = metadata[key]
@@ -235,7 +235,7 @@ def summarize_file(source_file: str, destination_file: str, config: Dict[str, An
     os.replace(temp_file, destination_file)
     logger.info(f"Successfully wrote summary: {destination_file}")
 
-def answer_query(query: str, source_file: str, destination_file: str, config: Dict[str, Any], summary_max_tokens: int) -> None:
+def answer_query(query: str, source_file: str, destination_file: str, config: dict[str, Any], summary_max_tokens: int) -> None:
     api_key: str = config.get("api_key", "")
     model_name: str = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
@@ -255,7 +255,7 @@ def answer_query(query: str, source_file: str, destination_file: str, config: Di
         
         prompt_text = f"Based on the following context, please answer the query: '{query}'.\n\nContext:\n{content}"
         
-        prompt: Union[str, List[Dict[str, str]]] = prompt_text
+        prompt: str | list[dict[str, str]] = prompt_text
         if hasattr(engine, 'format_prompt'):
             formatted = engine.format_prompt([{"role": "user", "content": prompt_text}])
             if formatted:
@@ -289,7 +289,7 @@ def main() -> None:
     args = parser.parse_args()
     
     if args.capabilities:
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "summarizer_gc_gemma4_31b",
             "type": "summarizer",
             "config_file": "summarizer_config_gc_gemma4_31b.json",

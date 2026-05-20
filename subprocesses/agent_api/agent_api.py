@@ -16,7 +16,7 @@ import signal
 import sys
 import logging
 import threading
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, TypedDict
 
 import requests
 
@@ -54,7 +54,7 @@ class AgentApiConfig(TypedDict):
     default_max_tokens: int
     default_temperature: float
 
-CONFIG_SCHEMA: Dict[str, str] = {
+CONFIG_SCHEMA: dict[str, str] = {
     "model_name": "str",
     "default_max_tokens": "int",
     "default_temperature": "float",
@@ -334,31 +334,31 @@ tools = [
 ]
 
 class ApiAgentEngine:
-    def __init__(self, server_cfg: Dict[str, Any], local_cfg: Dict[str, Any]) -> None:
+    def __init__(self, server_cfg: dict[str, Any], local_cfg: dict[str, Any]) -> None:
         self.url: str = server_cfg["url"].rstrip("/")
-        self.api_key: Optional[str] = server_cfg.get("api_key")
+        self.api_key: str | None = server_cfg.get("api_key")
         self.model: str = local_cfg["model_name"]
         logger.info(f"Agent API backend: {self.url} (Model: {self.model})")
 
     def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         max_tokens: int = 10000,
         temperature: float = 0.2,
     ) -> str:
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         # Normalize role names for OpenAI API
-        formatted: List[Dict[str, str]] = []
+        formatted: list[dict[str, str]] = []
         for m in messages:
             role = m["role"]
             if role == "model":
                 role = "assistant"
             formatted.append({"role": role, "content": m["content"]})
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": formatted,
             "tools": tools,
@@ -432,7 +432,7 @@ def run_persistent(engine: ApiAgentEngine) -> None:
             logger.info("Stdin closed, shutting down.")
             break
 
-        messages: List[Dict[str, str]] = req.get("messages", [])
+        messages: list[dict[str, str]] = req.get("messages", [])
         max_tokens: int = req.get("max_tokens", 10000)
         temperature: float = req.get("temperature", 0.2)
 
@@ -458,11 +458,11 @@ def main() -> None:
     if args.capabilities:
         url = server_config.get("url", "http://localhost:8180").rstrip("/")
         api_key = server_config.get("api_key")
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        available_models: List[str] = []
+        available_models: list[str] = []
         try:
             response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
             response.raise_for_status()
@@ -474,7 +474,7 @@ def main() -> None:
             # Just report empty available_models
 
         local_cfg = get_platform_config(CONFIG_FILE, DEFAULT_LOCAL_CONFIG)
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "agent_api",
             "type": "agent",
             "config_file": CONFIG_FILE,

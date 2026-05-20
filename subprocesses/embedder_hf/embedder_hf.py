@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Setup logging (to stderr so stdout stays clean for capabilities/protocol)
 from rich.console import Console
@@ -32,11 +32,11 @@ MODEL_NAME = "google/embeddinggemma-300m"
 # Gemma3 that accumulated across server-mode encode() calls → OOM.
 ENCODE_BATCH_SIZE = 32
 
-DEFAULT_CONFIG: Dict[str, Any] = {
+DEFAULT_CONFIG: dict[str, Any] = {
     "device": "auto"
 }
 
-def get_platform_config() -> Dict[str, Any]:
+def get_platform_config() -> dict[str, Any]:
     config_file = os.path.expanduser("~/.config/knrs/embedder_config_hf.json")
     try:
         if os.path.exists(config_file):
@@ -99,12 +99,12 @@ def _embed(model: Any, input_path: Path, output_path: Path, mode: str = "documen
     import numpy as np
     
     with input_path.open("r", encoding="utf-8") as f:
-        texts: List[str] = json.load(f)
+        texts: list[str] = json.load(f)
     if not texts:
         np.save(str(output_path), np.array([], dtype=np.float32))
         return
     
-    encode_kwargs: Dict[str, Any] = {
+    encode_kwargs: dict[str, Any] = {
         "batch_size": ENCODE_BATCH_SIZE,
         "show_progress_bar": False,   # parent's rich bar covers overall progress
         "convert_to_numpy": True,
@@ -166,7 +166,7 @@ def one_shot_mode(mode: str, input_path: Path, output_path: Path) -> None:
 
 def main() -> None:
     if len(sys.argv) == 2 and sys.argv[1] == "--capabilities":
-        cap: Dict[str, Any] = {
+        cap: dict[str, Any] = {
             "name": "embedder_hf",
             "type": "embedder",
             "config_file": "embedder_config_hf.json",
