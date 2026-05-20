@@ -253,8 +253,17 @@ class AgentTools:
     def wikipedia_fetch(self, title: str) -> str:
         """Download a Wikipedia article in plain text and save it to AINotes/Research/Wikipedia/."""
         try:
-            # Clean filename
-            safe_title = "".join([c if c.isalnum() or c in " -_" else "_" for c in title])
+            # Normalize title: isolate original Wikipedia query and format local wiki title
+            postfix = " (Wikipedia)"
+            if title.endswith(postfix):
+                original_title = title[:-len(postfix)].strip()
+            else:
+                original_title = title.strip()
+                
+            wiki_title = original_title + postfix
+
+            # Clean filename using wiki_title, allowing parenthesis
+            safe_title = "".join([c if c.isalnum() or c in " -_()" else "_" for c in wiki_title])
             wiki_dir = self.research_root / "Wikipedia"
             file_path = wiki_dir / f"{safe_title}.md"
 
@@ -277,13 +286,17 @@ class AgentTools:
                         # Clean up duplicate title header at the start of the body
                         if body_clean.startswith(f"# {title}"):
                             body_clean = body_clean[len(f"# {title}"):].strip()
+                        elif body_clean.startswith(f"# {wiki_title}"):
+                            body_clean = body_clean[len(f"# {wiki_title}"):].strip()
+                        elif body_clean.startswith(f"# {original_title}"):
+                            body_clean = body_clean[len(f"# {original_title}"):].strip()
                         elif body_clean.startswith("#"):
                             lines = body_clean.splitlines()
                             if lines and lines[0].strip().startswith("#"):
                                 body_clean = "\n".join(lines[1:]).strip()
 
                         preview = body_clean[:500] + "..." if len(body_clean) > 500 else body_clean
-                        return f"Successfully loaded cached article '{title}' from {cached_file.relative_to(self.config.wiki_path)}\n\nPreview:\n{preview}\n\nUse file_read with this path to read the full article."
+                        return f"Successfully loaded cached article '{wiki_title}' from {cached_file.relative_to(self.config.wiki_path)}\n\nPreview:\n{preview}\n\nUse file_read with this path to read the full article."
                 except Exception as e:
                     logger.warning("Error reading cached file %s: %s. Falling back to download.", cached_file, e)
 
@@ -295,7 +308,7 @@ class AgentTools:
                 "action": "query",
                 "prop": "extracts",
                 "explaintext": "1",
-                "titles": title,
+                "titles": original_title,
                 "format": "json"
             }
             url = "https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode(params)
@@ -307,22 +320,22 @@ class AgentTools:
             pages = data.get("query", {}).get("pages", {})
             page = next(iter(pages.values()))
             if "missing" in page:
-                return f"Error: Wikipedia article '{title}' not found."
+                return f"Error: Wikipedia article '{original_title}' not found."
                 
             content = page.get("extract", "")
             if not content:
-                return f"Error: No content found for '{title}'."
+                return f"Error: No content found for '{original_title}'."
                 
             # Save it to AINotes/Research/Wikipedia/
             wiki_dir.mkdir(parents=True, exist_ok=True)
             
             # Write frontmatter and content
             from calibre.converter import atomic_write
-            md_content = f"---\ntitle: \"{title}\"\nsource: \"Wikipedia\"\n---\n\n# {title}\n\n{content}"
+            md_content = f"---\ntitle: \"{wiki_title}\"\nsource: \"Wikipedia\"\n---\n\n# {wiki_title}\n\n{content}"
             atomic_write(file_path, md_content)
             
             preview = content[:500] + "..." if len(content) > 500 else content
-            return f"Successfully downloaded '{title}' to {file_path.relative_to(self.config.wiki_path)}\n\nPreview:\n{preview}\n\nUse file_read with this path to read the full article."
+            return f"Successfully downloaded '{wiki_title}' to {file_path.relative_to(self.config.wiki_path)}\n\nPreview:\n{preview}\n\nUse file_read with this path to read the full article."
         except Exception as e:
             return f"Error fetching Wikipedia article: {e}"
 

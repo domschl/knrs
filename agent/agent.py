@@ -52,14 +52,9 @@ class ResearchAgent:
     # ── tool-call extraction (unchanged) ─────────────────────────────
 
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
-<<<<<<< HEAD
         """Find and repair JSON, Qwen XML, or Gemma native tool calls."""
         calls: List[Dict[str, Any]] = []
         temp_text = text
-=======
-        """Find and repair JSON blocks containing 'tool' and 'args'."""
-        calls: list[dict[str, Any]] = []
->>>>>>> 29073f0a823c5d8d8c219cf1e74f9ad92f888002
 
         # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
         if "<tool_call>" in text:
