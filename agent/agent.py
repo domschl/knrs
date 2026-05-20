@@ -52,32 +52,77 @@ class ResearchAgent:
     # ── tool-call extraction (unchanged) ─────────────────────────────
 
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
-        """Find and repair JSON blocks containing 'tool' and 'args'."""
+        """Find and repair JSON, Qwen XML, or Gemma native tool calls."""
         calls: List[Dict[str, Any]] = []
+        temp_text = text
 
-        # if 'tool' in text[:50] or 'TOOL' in text[:50]:
-        #     print("----------------------------------")
-        #     print(f"Potential tool call: {text[:300]}")
-        #     print("----------------------------------")
+        # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
+        if "<tool_call>" in text:
+            qwen_matches = list(re.finditer(r'<tool_call>\s*<function=(\w+)>\s*(.*?)\s*</tool_call>', text, re.DOTALL))
+            for qwen_match in qwen_matches:
+                # Blank out the matched span in temp_text to prevent double-parsing
+                start, end = qwen_match.span()
+                temp_text = temp_text[:start] + " " * (end - start) + temp_text[end:]
+                
+                name = qwen_match.group(1)
+                param_str = qwen_match.group(2)
+                args = {}
+                param_matches = re.finditer(r'<parameter=(\w+)>\s*(.*?)(?=\s*<parameter=|\s*$)', param_str, re.DOTALL)
+                for pm in param_matches:
+                    p_name = pm.group(1)
+                    p_val = pm.group(2).strip()
+                    
+                    while True:
+                        stripped = re.sub(r'</\w+>\s*$', '', p_val).strip()
+                        if stripped == p_val:
+                            break
+                        p_val = stripped
+                        
+                    try:
+                        args[p_name] = json.loads(p_val)
+                    except Exception:
+                        try:
+                            if "." in p_val:
+                                args[p_name] = float(p_val)
+                            else:
+                                args[p_name] = int(p_val)
+                        except Exception:
+                            args[p_name] = p_val
+                calls.append({
+                    "tool": name,
+                    "args": args
+                })
 
-        # 1. Native format check (high confidence)
-        gemma_matches = re.finditer(r'<\|tool_call\>call:(\w+)(\{.*?\})<tool_call\|\>', text)
-        for gemma_match in gemma_matches:
-            tool_name = gemma_match.group(1)
-            args_str = gemma_match.group(2)
-            import yaml
+        # 2. Parse Gemma-style tool calls: <|tool_call|>call:(\w+)({...})<tool_call|>
+        # Matches both the standard template variants (with or without leading/trailing '|')
+        gemma_matches = list(re.finditer(r'<\|?tool_call\|?>call:(\w+)(\{.*?\})(?:<tool_call\|?>|<\|?tool_call\|?>)', text, re.DOTALL))
+        for g_match in gemma_matches:
+            # Blank out the matched span in temp_text to prevent double-parsing
+            start, end = g_match.span()
+            temp_text = temp_text[:start] + " " * (end - start) + temp_text[end:]
+
+            name = g_match.group(1)
+            args_str = g_match.group(2)
             try:
-                args = yaml.safe_load(args_str)
-                if isinstance(args, dict):
-                    calls.append({"tool": tool_name, "args": args})
+                args = json.loads(args_str)
             except Exception:
-                pass
+                try:
+                    import yaml
+                    args = yaml.safe_load(args_str)
+                except Exception:
+                    args = args_str
+            
+            if isinstance(args, dict):
+                calls.append({
+                    "tool": name,
+                    "args": args
+                })
 
-        # 2. Aggressive search for JSON-like blocks
+        # 3. Aggressive search for JSON-like blocks on temp_text (where native calls are blanked out)
         potential_blocks = []
 
         # Find markdown code blocks first
-        blocks = re.finditer(r'```(?:json)?\s*(.*?)(?:```|$)', text, re.DOTALL)
+        blocks = re.finditer(r'```(?:json)?\s*(.*?)(?:```|$)', temp_text, re.DOTALL)
         for b in blocks:
             potential_blocks.append(b.group(1).strip())
 
@@ -119,7 +164,7 @@ class ResearchAgent:
             return results
 
         if not potential_blocks:
-            potential_blocks.extend(extract_balanced(text))
+            potential_blocks.extend(extract_balanced(temp_text))
 
         def try_parse(raw: str) -> Optional[Dict[str, Any]]:
             # Clean up obvious trailing garbage
