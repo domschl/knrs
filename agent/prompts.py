@@ -90,7 +90,7 @@ You operate in a ReAct loop: Plan -> Act -> Observe -> Synthesize.
 
 1. First, think about your approach. Don't try to answer directly, simply identify further
    research topics, and identify the tools your are going to use. Start with querying the research topic using `vector_search`.
-2. In order to use a tool, output exactly ONE tool call using this JSON format:
+2. In order to use a tool, output exactly ONE tool call. You can use your native tool-calling format (such as Qwen XML tags `<tool_call><function=...><parameter=...></tool_call>` or Gemma `<|tool_call|>call:function_name({...})<tool_call|>`) if supported by your training/template, or output a JSON block in the following format:
 ```json
 {
   "tool": "tool_name",
