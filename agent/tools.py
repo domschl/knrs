@@ -425,6 +425,79 @@ class AgentTools:
             
         return self.research_root / p
 
+    def _check_filename_uniqueness(self, target_path: Path, exclude_paths: list[Path] | None = None) -> str | None:
+        """Check if the stem of target_path is already used by an existing md file in wiki_path.
+        Returns an error message if duplicate found, else None.
+        """
+        import unicodedata
+        
+        if target_path.suffix.lower() != ".md":
+            return None
+            
+        target_stem = unicodedata.normalize("NFC", target_path.stem).strip().lower()
+        exclude_set = {p.resolve() for p in (exclude_paths or []) if p.exists()}
+        
+        for md_path in self.config.wiki_path.rglob("*.md"):
+            if ".stfolder" in md_path.parts or ".git" in md_path.parts:
+                continue
+            
+            try:
+                resolved_md = md_path.resolve()
+            except Exception:
+                resolved_md = md_path
+                
+            if resolved_md in exclude_set:
+                continue
+                
+            norm_stem = unicodedata.normalize("NFC", md_path.stem).strip().lower()
+            if norm_stem == target_stem:
+                try:
+                    rel_path = md_path.relative_to(self.config.wiki_path)
+                except ValueError:
+                    rel_path = md_path
+                return (
+                    f"Error: The filename stem '{md_path.stem}' is already in use at '{rel_path}'. "
+                    f"Filenames must be globally unique within the wiki tree to ensure wikilinks function correctly. "
+                    f"Please select a different, unique filename."
+                )
+        return None
+
+    def _check_filename_uniqueness_for_move(self, p_src: Path, p_dst: Path) -> str | None:
+        """Verify that moving p_src to p_dst will not introduce any duplicate stems.
+        Returns error string if duplicate is found, else None.
+        """
+        files_to_check: list[tuple[Path, Path]] = []
+        
+        if p_src.is_file():
+            if p_dst.is_dir():
+                expected_dest = p_dst / p_src.name
+            else:
+                expected_dest = p_dst
+            files_to_check.append((p_src, expected_dest))
+        elif p_src.is_dir():
+            if p_dst.is_dir():
+                base_dest = p_dst / p_src.name
+            else:
+                base_dest = p_dst
+                
+            for p in p_src.rglob("*.md"):
+                if p.is_file():
+                    try:
+                        rel = p.relative_to(p_src)
+                        expected_dest = base_dest / rel
+                        files_to_check.append((p, expected_dest))
+                    except ValueError:
+                        pass
+                        
+        exclude_paths = [src for src, _ in files_to_check]
+        
+        for _, dest in files_to_check:
+            dup_error = self._check_filename_uniqueness(dest, exclude_paths=exclude_paths)
+            if dup_error:
+                return dup_error
+                
+        return None
+
     def file_write(self, path: str, content: str) -> str:
         """Write content to a file in AINotes/Research/."""
         try:
@@ -435,6 +508,11 @@ class AgentTools:
             if not self._is_safe_write_path(p):
                 return f"Error: Cannot write outside {self.research_root}"
                 
+            # Check for duplicate filename stem across the entire wiki tree
+            dup_error = self._check_filename_uniqueness(p, exclude_paths=[p])
+            if dup_error:
+                return dup_error
+
             atomic_write(p, content)
             return f"Successfully wrote to {p}."
         except Exception as e:
@@ -486,6 +564,11 @@ class AgentTools:
             if not p_src.exists():
                 return f"Error: Source does not exist: {src}"
                 
+            # Check for duplicate filename stems that would result from this move
+            dup_error = self._check_filename_uniqueness_for_move(p_src, p_dst)
+            if dup_error:
+                return dup_error
+
             # Create destination directory if it doesn't exist
             p_dst.parent.mkdir(parents=True, exist_ok=True)
                 
