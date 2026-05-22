@@ -81,7 +81,17 @@ class ApiEngine(BaseEngine):
             response = requests.post(f"{self.url}/v1/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            choice: dict[str, Any] = data["choices"][0]
+            message: dict[str, Any] = choice["message"]
+            content: str = message.get("content", "") or ""
+            reasoning_content: str = message.get("reasoning_content", "") or ""
+            
+            if not content.strip() and reasoning_content.strip():
+                logger.warning(
+                    f"Model generated reasoning_content but empty main content. "
+                    f"This usually indicates the max_tokens limit ({max_tokens}) was hit during the reasoning phase."
+                )
+            return content.strip()
         except Exception as e:
             logger.error(f"API request failed: {e}")
             raise
