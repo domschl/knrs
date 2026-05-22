@@ -37,7 +37,21 @@ def assemble_markdown(metadata: dict[str, Any] | None, md_text: str) -> str:
         header += "\n"
     return f"---\n{header}---\n{md_text}"
 
+import re
+
 def get_answer_from_output(text: str) -> str:
     if "<channel|>" in text:
-        return text.split("<channel|>")[-1].strip()
-    return text
+        text = text.split("<channel|>")[-1]
+        
+    # Strip <think>...</think> tags if present
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    
+    # Handle unclosed <think> tag if it was cut off
+    if "<think>" in text:
+        text = text.split("<think>")[-1]
+        if "</think>" in text:
+            text = text.split("</think>")[-1]
+        else:
+            text = ""
+            
+    return text.strip()
