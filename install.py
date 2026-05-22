@@ -17,6 +17,7 @@ from pathlib import Path
 
 import argparse
 
+
 def run_command(cmd, cwd=None):
     """Run a command and print output."""
     print(f"Running: {' '.join(cmd)} in {cwd or '.'}")
@@ -26,16 +27,21 @@ def run_command(cmd, cwd=None):
         print(f"Error: Command failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
+
 def has_torch_installed(cwd):
     """Check if torch is installed in the local environment."""
     try:
         # We use 'uv pip show torch' which is fast.
-        result = subprocess.run(["uv", "pip", "show", "torch"], cwd=cwd, capture_output=True, text=True)
+        result = subprocess.run(
+            ["uv", "pip", "show", "torch"], cwd=cwd, capture_output=True, text=True
+        )
         return result.returncode == 0
     except Exception:
         return False
 
+
 import json
+
 
 def wants_xpu(item_path):
     """Check if the module's config file specifies 'xpu' as device."""
@@ -43,10 +49,15 @@ def wants_xpu(item_path):
         script = item_path / f"{item_path.name}.py"
         if not script.exists():
             return False
-            
+
+        if item_path.name == "md_converter":
+            return False
+
         result = subprocess.run(
             ["uv", "run", "python", str(script), "--capabilities"],
-            cwd=item_path, capture_output=True, text=True
+            cwd=item_path,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             cap = json.loads(result.stdout)
@@ -61,17 +72,24 @@ def wants_xpu(item_path):
         pass
     return False
 
+
 def main():
     parser = argparse.ArgumentParser(description="knrs installation and update script.")
-    parser.add_argument("--xpu", action="store_true", help="Install Intel XPU optimized torch versions.")
-    parser.add_argument("--offline", action="store_true", help="Run uv sync in offline mode.")
+    parser.add_argument(
+        "--xpu", action="store_true", help="Install Intel XPU optimized torch versions."
+    )
+    parser.add_argument(
+        "--offline", action="store_true", help="Run uv sync in offline mode."
+    )
     args = parser.parse_args()
 
     root = Path(__file__).parent.resolve()
-    
+
     # 1. Check for uv
     if not shutil.which("uv"):
-        print("Error: 'uv' is not installed. Please install it first (https://github.com/astral-sh/uv).")
+        print(
+            "Error: 'uv' is not installed. Please install it first (https://github.com/astral-sh/uv)."
+        )
         sys.exit(1)
 
     print("--- Syncing root project ---")
@@ -84,12 +102,12 @@ def main():
         return
 
     is_macos = platform.system() == "Darwin"
-    
+
     print("\n--- Syncing and initializing subprocesses ---")
     for item in sorted(sub_dir.iterdir()):
         if not item.is_dir():
             continue
-        
+
         pyproject = item / "pyproject.toml"
         if not pyproject.exists():
             continue
@@ -106,18 +124,31 @@ def main():
         script = item / f"{item.name}.py"
         if script.exists():
             print(f"Initializing {item.name}...")
-            subprocess.run(["uv", "run", "python", str(script), "--capabilities"], cwd=item, capture_output=True)
+            subprocess.run(
+                ["uv", "run", "python", str(script), "--capabilities"],
+                cwd=item,
+                capture_output=True,
+            )
 
         # 3. Handle XPU overlay
         use_xpu = args.xpu or wants_xpu(item)
         if use_xpu and has_torch_installed(item):
             print(f"Overlaying XPU-optimized torch for {item.name}...")
-            run_command([
-                "uv", "pip", "install", "torch", "--upgrade", 
-                "--index-url", "https://download.pytorch.org/whl/xpu"
-            ], cwd=item)
+            run_command(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "torch",
+                    "--upgrade",
+                    "--index-url",
+                    "https://download.pytorch.org/whl/xpu",
+                ],
+                cwd=item,
+            )
 
     print("\nInstallation/Update complete!")
+
 
 if __name__ == "__main__":
     main()
