@@ -50,8 +50,8 @@ def wants_xpu(item_path):
         if not script.exists():
             return False
 
-        if item_path.name == "md_converter":
-            return False
+        # if item_path.name == "md_converter":
+        # return False
 
         result = subprocess.run(
             ["uv", "run", "python", str(script), "--capabilities"],
