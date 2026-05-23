@@ -121,6 +121,7 @@ def convert(source_file: str, destination_file: str) -> None:
     elif ext.endswith('.pdf'):
         try:
             # Silence specific noisy loggers that spam non-fatal errors or progress
+            logging.getLogger("transformers").setLevel(logging.ERROR)
             logging.getLogger("docling.models.inference_engines.vlm.transformers_engine").setLevel(logging.WARNING)
             logging.getLogger("docling.models.inference_engines.vlm.auto_inline_engine").setLevel(logging.WARNING)
             logging.getLogger("httpx").setLevel(logging.WARNING)
