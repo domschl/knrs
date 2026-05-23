@@ -477,7 +477,8 @@ class BenchmarkRunner:
     # ─── File Operations & Formatting ──────────────────────────────────────────
 
     def _save_results(self, run_record: dict[str, Any]) -> None:
-        """Save results list to benchmark_results.json, keeping history."""
+        """Save results list to benchmark_results.json, keeping the latest run per host."""
+        # 1. Update the workspace results file
         history = []
         if self.results_path.exists():
             try:
@@ -488,19 +489,47 @@ class BenchmarkRunner:
                         history = [history]
             except Exception as e:
                 logger.error("Failed to read existing benchmark history: %s", e)
-        
+
+        current_hostname = run_record.get("hostname")
+
+        # Filter out all existing entries for this hostname, then append the new record
+        history = [
+            entry for entry in history 
+            if not (isinstance(entry, dict) and entry.get("hostname") == current_hostname)
+        ]
         history.append(run_record)
-        
+
         try:
             temp_path = self.results_path.with_suffix(".json.tmp")
             temp_path.write_text(json.dumps(history, indent=4), encoding="utf-8")
             temp_path.replace(self.results_path)
-            
-            # Also sync to user's config directory as a backup
-            config_results_path = Path.home() / ".config" / "knrs" / "benchmark_runs.json"
-            config_results_path.parent.mkdir(parents=True, exist_ok=True)
-            config_results_path.write_text(json.dumps(history, indent=4), encoding="utf-8")
-            
             logger.info("Results saved to: %s", self.results_path)
         except Exception as e:
             logger.error("Failed to save benchmark results: %s", e)
+
+        # 2. Also update the user's config directory backup (keeping latest per host too)
+        config_results_path = Path.home() / ".config" / "knrs" / "benchmark_runs.json"
+        config_history = []
+        if config_results_path.exists():
+            try:
+                content = config_results_path.read_text(encoding="utf-8")
+                if content.strip():
+                    config_history = json.loads(content)
+                    if not isinstance(config_history, list):
+                        config_history = [config_history]
+            except Exception as e:
+                logger.error("Failed to read global benchmark backup: %s", e)
+
+        config_history = [
+            entry for entry in config_history 
+            if not (isinstance(entry, dict) and entry.get("hostname") == current_hostname)
+        ]
+        config_history.append(run_record)
+
+        try:
+            config_results_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_config_path = config_results_path.with_suffix(".json.tmp")
+            temp_config_path.write_text(json.dumps(config_history, indent=4), encoding="utf-8")
+            temp_config_path.replace(config_results_path)
+        except Exception as e:
+            logger.error("Failed to save global benchmark backup: %s", e)
