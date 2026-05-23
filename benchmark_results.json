@@ -1,124 +1,5 @@
 [
     {
-        "timestamp": "2026-05-23T12:53:05.664221",
-        "hostname": "m2max",
-        "os": "Darwin 25.5.0",
-        "cpu": "Apple M2 Max",
-        "accelerator": "MPS (Apple Silicon GPU)",
-        "results": [
-            {
-                "backend": "md_converter",
-                "backend_type": "converter",
-                "task_name": "convert_pdf",
-                "pass_fail": "pass",
-                "load_time_sec": 0.0,
-                "latency_sec": 8.758718967437744,
-                "throughput": 10.389647200499336,
-                "throughput_units": "chars/sec",
-                "error": null
-            },
-            {
-                "backend": "md_converter",
-                "backend_type": "converter",
-                "task_name": "convert_epub",
-                "pass_fail": "pass",
-                "load_time_sec": 0.0,
-                "latency_sec": 3.4025049209594727,
-                "throughput": 161.35171373835587,
-                "throughput_units": "chars/sec",
-                "error": null
-            },
-            {
-                "backend": "summarizer_api",
-                "backend_type": "summarizer",
-                "task_name": "summarize",
-                "pass_fail": "fail",
-                "load_time_sec": 0.0,
-                "latency_sec": 0.4010488986968994,
-                "throughput": 0.0,
-                "throughput_units": "chars/sec",
-                "error": "Command '['/Users/dsc/Codeberg/knrs/subprocesses/summarizer_api/.venv/bin/python', '/Users/dsc/Codeberg/knrs/subprocesses/summarizer_api/summarizer_api.py', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpcm9tc9nz/src_summarizer_api.md', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpcm9tc9nz/sum_summarizer_api.md', '--summary_max_tokens', '150']' returned non-zero exit status 1."
-            },
-            {
-                "backend": "summarizer_gc_gemma4_31b",
-                "backend_type": "summarizer",
-                "task_name": "summarize",
-                "pass_fail": "pass",
-                "load_time_sec": 0.0,
-                "latency_sec": 39.021167039871216,
-                "throughput": 27.75416734444174,
-                "throughput_units": "chars/sec",
-                "error": null
-            },
-            {
-                "backend": "summarizer_macos",
-                "backend_type": "summarizer",
-                "task_name": "summarize",
-                "pass_fail": "pass",
-                "load_time_sec": 0.0,
-                "latency_sec": 25.581248998641968,
-                "throughput": 32.25018450208576,
-                "throughput_units": "chars/sec",
-                "error": null
-            },
-            {
-                "backend": "embedder_api",
-                "backend_type": "embedder",
-                "task_name": "embed_batch",
-                "pass_fail": "fail",
-                "load_time_sec": 0.306107759475708,
-                "latency_sec": 0.0,
-                "throughput": 0.0,
-                "throughput_units": "embeddings/sec",
-                "error": "Embedder subprocess error: ERROR: HTTPConnectionPool(host='localhost', port=8180): Max retries exceeded with url: /v1/embeddings (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8180): Failed to establish a new connection: [Errno 61] Connection refused\"))"
-            },
-            {
-                "backend": "embedder_hf",
-                "backend_type": "embedder",
-                "task_name": "embed_batch",
-                "pass_fail": "pass",
-                "load_time_sec": 4.700823068618774,
-                "latency_sec": 0.34653306007385254,
-                "throughput": 14.428637772495382,
-                "throughput_units": "embeddings/sec",
-                "error": null
-            },
-            {
-                "backend": "agent_api",
-                "backend_type": "agent",
-                "task_name": "chat_generation",
-                "pass_fail": "fail",
-                "load_time_sec": 0.11763501167297363,
-                "latency_sec": 0.0,
-                "throughput": 0.0,
-                "throughput_units": "tokens/sec (estimated)",
-                "error": "Agent backend error: HTTPConnectionPool(host='localhost', port=8180): Max retries exceeded with url: /v1/chat/completions (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8180): Failed to establish a new connection: [Errno 61] Connection refused\"))"
-            },
-            {
-                "backend": "agent_macos",
-                "backend_type": "agent",
-                "task_name": "chat_generation",
-                "pass_fail": "pass",
-                "load_time_sec": 7.478545904159546,
-                "latency_sec": 6.428400754928589,
-                "throughput": 15.050399576570078,
-                "throughput_units": "tokens/sec (estimated)",
-                "error": null
-            },
-            {
-                "backend": "agent_hf",
-                "backend_type": "agent",
-                "task_name": "chat_generation",
-                "pass_fail": "fail",
-                "load_time_sec": 0.09219813346862793,
-                "latency_sec": 0.0,
-                "throughput": 0.0,
-                "throughput_units": "tokens/sec (estimated)",
-                "error": "Agent subprocess did not send READY; got: ''"
-            }
-        ]
-    },
-    {
         "timestamp": "2026-05-23T13:35:02.255037",
         "hostname": "m4mini.fritz.box",
         "os": "Darwin 25.5.0",
@@ -327,6 +208,125 @@
                 "task_name": "chat_generation",
                 "pass_fail": "fail",
                 "load_time_sec": 6.595580339431763,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": "Agent subprocess did not send READY; got: ''"
+            }
+        ]
+    },
+    {
+        "timestamp": "2026-05-23T16:04:11.564057",
+        "hostname": "m2max",
+        "os": "Darwin 25.5.0",
+        "cpu": "Apple M2 Max",
+        "accelerator": "MPS (Apple Silicon GPU)",
+        "results": [
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_pdf",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 8.364251852035522,
+                "throughput": 10.879634139406534,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_epub",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 3.3824808597564697,
+                "throughput": 162.30690512747694,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "summarizer_api",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "fail",
+                "load_time_sec": 0.0,
+                "latency_sec": 0.39370298385620117,
+                "throughput": 0.0,
+                "throughput_units": "chars/sec",
+                "error": "Command '['/Users/dsc/Codeberg/knrs/subprocesses/summarizer_api/.venv/bin/python', '/Users/dsc/Codeberg/knrs/subprocesses/summarizer_api/summarizer_api.py', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/src_summarizer_api.md', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/sum_summarizer_api.md', '--summary_max_tokens', '150']' returned non-zero exit status 1."
+            },
+            {
+                "backend": "summarizer_gc_gemma4_31b",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "fail",
+                "load_time_sec": 0.0,
+                "latency_sec": 300.0071949958801,
+                "throughput": 0.0,
+                "throughput_units": "chars/sec",
+                "error": "Command '['/Users/dsc/Codeberg/knrs/subprocesses/summarizer_gc_gemma4_31b/.venv/bin/python', '/Users/dsc/Codeberg/knrs/subprocesses/summarizer_gc_gemma4_31b/summarizer_gc_gemma4_31b.py', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/src_summarizer_gc_gemma4_31b.md', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/sum_summarizer_gc_gemma4_31b.md', '--summary_max_tokens', '150']' timed out after 300 seconds"
+            },
+            {
+                "backend": "summarizer_macos",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 32.8688600063324,
+                "throughput": 24.886777327914842,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "embedder_api",
+                "backend_type": "embedder",
+                "task_name": "embed_batch",
+                "pass_fail": "fail",
+                "load_time_sec": 0.33647799491882324,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "embeddings/sec",
+                "error": "Embedder subprocess error: ERROR: HTTPConnectionPool(host='localhost', port=8180): Max retries exceeded with url: /v1/embeddings (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8180): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+            },
+            {
+                "backend": "embedder_hf",
+                "backend_type": "embedder",
+                "task_name": "embed_batch",
+                "pass_fail": "pass",
+                "load_time_sec": 6.060110092163086,
+                "latency_sec": 0.3809468746185303,
+                "throughput": 13.125189713150586,
+                "throughput_units": "embeddings/sec",
+                "error": null
+            },
+            {
+                "backend": "agent_api",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "fail",
+                "load_time_sec": 0.12145090103149414,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": "Agent backend error: HTTPConnectionPool(host='localhost', port=8180): Max retries exceeded with url: /v1/chat/completions (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8180): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+            },
+            {
+                "backend": "agent_macos",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "pass",
+                "load_time_sec": 7.478911876678467,
+                "latency_sec": 7.455124855041504,
+                "throughput": 12.977649855799951,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": null
+            },
+            {
+                "backend": "agent_hf",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "fail",
+                "load_time_sec": 0.09225296974182129,
                 "latency_sec": 0.0,
                 "throughput": 0.0,
                 "throughput_units": "tokens/sec (estimated)",
