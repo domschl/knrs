@@ -30,10 +30,14 @@ def run_command(cmd, cwd=None):
 
 def has_torch_installed(cwd):
     """Check if torch is installed in the local environment."""
+    return has_package_installed(cwd, "torch")
+
+
+def has_package_installed(cwd, package_name):
+    """Check if the given package is installed in the local environment."""
     try:
-        # We use 'uv pip show torch' which is fast.
         result = subprocess.run(
-            ["uv", "pip", "show", "torch"], cwd=cwd, capture_output=True, text=True
+            ["uv", "pip", "show", package_name], cwd=cwd, capture_output=True, text=True
         )
         return result.returncode == 0
     except Exception:
@@ -133,13 +137,19 @@ def main():
         # 3. Handle XPU overlay
         use_xpu = args.xpu or wants_xpu(item)
         if use_xpu and has_torch_installed(item):
-            print(f"Overlaying XPU-optimized torch for {item.name}...")
+            packages_to_install = ["torch"]
+            if has_package_installed(item, "torchvision"):
+                packages_to_install.append("torchvision")
+                
+            print(f"Overlaying XPU-optimized {', '.join(packages_to_install)} for {item.name}...")
             run_command(
                 [
                     "uv",
                     "pip",
                     "install",
-                    "torch",
+                ]
+                + packages_to_install
+                + [
                     "--upgrade",
                     "--index-url",
                     "https://download.pytorch.org/whl/xpu",
