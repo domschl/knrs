@@ -119,7 +119,126 @@
         ]
     },
     {
-        "timestamp": "2026-05-23T14:39:22.075009",
+        "timestamp": "2026-05-23T16:04:11.564057",
+        "hostname": "m2max",
+        "os": "Darwin 25.5.0",
+        "cpu": "Apple M2 Max",
+        "accelerator": "MPS (Apple Silicon GPU)",
+        "results": [
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_pdf",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 8.364251852035522,
+                "throughput": 10.879634139406534,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_epub",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 3.3824808597564697,
+                "throughput": 162.30690512747694,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "summarizer_api",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "fail",
+                "load_time_sec": 0.0,
+                "latency_sec": 0.39370298385620117,
+                "throughput": 0.0,
+                "throughput_units": "chars/sec",
+                "error": "Command '['/Users/dsc/Codeberg/knrs/subprocesses/summarizer_api/.venv/bin/python', '/Users/dsc/Codeberg/knrs/subprocesses/summarizer_api/summarizer_api.py', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/src_summarizer_api.md', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/sum_summarizer_api.md', '--summary_max_tokens', '150']' returned non-zero exit status 1."
+            },
+            {
+                "backend": "summarizer_gc_gemma4_31b",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "fail",
+                "load_time_sec": 0.0,
+                "latency_sec": 300.0071949958801,
+                "throughput": 0.0,
+                "throughput_units": "chars/sec",
+                "error": "Command '['/Users/dsc/Codeberg/knrs/subprocesses/summarizer_gc_gemma4_31b/.venv/bin/python', '/Users/dsc/Codeberg/knrs/subprocesses/summarizer_gc_gemma4_31b/summarizer_gc_gemma4_31b.py', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/src_summarizer_gc_gemma4_31b.md', '/var/folders/b1/wjxk3d6n5gbgvfdhmdpsmyd40000gn/T/tmpp980heb3/sum_summarizer_gc_gemma4_31b.md', '--summary_max_tokens', '150']' timed out after 300 seconds"
+            },
+            {
+                "backend": "summarizer_macos",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 32.8688600063324,
+                "throughput": 24.886777327914842,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "embedder_api",
+                "backend_type": "embedder",
+                "task_name": "embed_batch",
+                "pass_fail": "fail",
+                "load_time_sec": 0.33647799491882324,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "embeddings/sec",
+                "error": "Embedder subprocess error: ERROR: HTTPConnectionPool(host='localhost', port=8180): Max retries exceeded with url: /v1/embeddings (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8180): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+            },
+            {
+                "backend": "embedder_hf",
+                "backend_type": "embedder",
+                "task_name": "embed_batch",
+                "pass_fail": "pass",
+                "load_time_sec": 6.060110092163086,
+                "latency_sec": 0.3809468746185303,
+                "throughput": 13.125189713150586,
+                "throughput_units": "embeddings/sec",
+                "error": null
+            },
+            {
+                "backend": "agent_api",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "fail",
+                "load_time_sec": 0.12145090103149414,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": "Agent backend error: HTTPConnectionPool(host='localhost', port=8180): Max retries exceeded with url: /v1/chat/completions (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8180): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+            },
+            {
+                "backend": "agent_macos",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "pass",
+                "load_time_sec": 7.478911876678467,
+                "latency_sec": 7.455124855041504,
+                "throughput": 12.977649855799951,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": null
+            },
+            {
+                "backend": "agent_hf",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "fail",
+                "load_time_sec": 0.09225296974182129,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": "Agent subprocess did not send READY; got: ''"
+            }
+        ]
+    },
+    {
+        "timestamp": "2026-05-23T16:16:20.861394",
         "hostname": "hal9000",
         "os": "Linux 7.0.9-arch2-1",
         "cpu": "Intel(R) Core(TM) Ultra 5 225H",
@@ -129,23 +248,23 @@
                 "backend": "md_converter",
                 "backend_type": "converter",
                 "task_name": "convert_pdf",
-                "pass_fail": "fail",
+                "pass_fail": "pass",
                 "load_time_sec": 0.0,
-                "latency_sec": 5.172627210617065,
-                "throughput": 0.0,
+                "latency_sec": 23.440515279769897,
+                "throughput": 3.8821672183348563,
                 "throughput_units": "chars/sec",
-                "error": "Command '['/home/dsc/Codeberg/knrs/subprocesses/md_converter/.venv/bin/python', '/home/dsc/Codeberg/knrs/subprocesses/md_converter/md_converter.py', '/tmp/tmp4ynqgt86/test.pdf', '/tmp/tmp4ynqgt86/pdf_converted.md']' returned non-zero exit status 1."
+                "error": null
             },
             {
                 "backend": "md_converter",
                 "backend_type": "converter",
                 "task_name": "convert_epub",
-                "pass_fail": "fail",
+                "pass_fail": "pass",
                 "load_time_sec": 0.0,
-                "latency_sec": 5.403146266937256,
-                "throughput": 0.0,
+                "latency_sec": 5.202106237411499,
+                "throughput": 105.53417691699724,
                 "throughput_units": "chars/sec",
-                "error": "Command '['/home/dsc/Codeberg/knrs/subprocesses/md_converter/.venv/bin/python', '/home/dsc/Codeberg/knrs/subprocesses/md_converter/md_converter.py', '/tmp/tmp4ynqgt86/test.epub', '/tmp/tmp4ynqgt86/epub_converted.md']' returned non-zero exit status 1."
+                "error": null
             },
             {
                 "backend": "summarizer_api",
@@ -153,7 +272,7 @@
                 "task_name": "summarize",
                 "pass_fail": "fail",
                 "load_time_sec": 0.0,
-                "latency_sec": 19.291250944137573,
+                "latency_sec": 18.398371696472168,
                 "throughput": 0,
                 "throughput_units": "chars/sec",
                 "error": "Soft failure: Summary content overlap too low. Words shared: []"
@@ -162,19 +281,19 @@
                 "backend": "summarizer_gc_gemma4_31b",
                 "backend_type": "summarizer",
                 "task_name": "summarize",
-                "pass_fail": "pass",
+                "pass_fail": "fail",
                 "load_time_sec": 0.0,
-                "latency_sec": 23.24896788597107,
-                "throughput": 46.36764975061489,
+                "latency_sec": 10.190340518951416,
+                "throughput": 0,
                 "throughput_units": "chars/sec",
-                "error": null
+                "error": "Soft failure: Summary content overlap too low. Words shared: []"
             },
             {
                 "backend": "embedder_api",
                 "backend_type": "embedder",
                 "task_name": "embed_batch",
                 "pass_fail": "fail",
-                "load_time_sec": 0.1520371437072754,
+                "load_time_sec": 0.2518808841705322,
                 "latency_sec": 0.0,
                 "throughput": 0.0,
                 "throughput_units": "embeddings/sec",
@@ -185,9 +304,9 @@
                 "backend_type": "embedder",
                 "task_name": "embed_batch",
                 "pass_fail": "pass",
-                "load_time_sec": 5.554593563079834,
-                "latency_sec": 1.215207815170288,
-                "throughput": 4.114522584188077,
+                "load_time_sec": 8.649772644042969,
+                "latency_sec": 1.8172674179077148,
+                "throughput": 2.75138372631843,
                 "throughput_units": "embeddings/sec",
                 "error": null
             },
@@ -196,7 +315,7 @@
                 "backend_type": "agent",
                 "task_name": "chat_generation",
                 "pass_fail": "fail",
-                "load_time_sec": 0.13250184059143066,
+                "load_time_sec": 0.27021312713623047,
                 "latency_sec": 0.0,
                 "throughput": 0.0,
                 "throughput_units": "tokens/sec (estimated)",
@@ -207,31 +326,11 @@
                 "backend_type": "agent",
                 "task_name": "chat_generation",
                 "pass_fail": "fail",
-                "load_time_sec": 6.595580339431763,
+                "load_time_sec": 8.625027894973755,
                 "latency_sec": 0.0,
                 "throughput": 0.0,
                 "throughput_units": "tokens/sec (estimated)",
                 "error": "Agent subprocess did not send READY; got: ''"
-            }
-        ]
-    },
-    {
-        "timestamp": "2026-05-23T16:20:37.954272",
-        "hostname": "m2max",
-        "os": "Darwin 25.5.0",
-        "cpu": "Apple M2 Max",
-        "accelerator": "MPS (Apple Silicon GPU)",
-        "results": [
-            {
-                "backend": "summarizer_macos",
-                "backend_type": "summarizer",
-                "task_name": "summarize",
-                "pass_fail": "pass",
-                "load_time_sec": 0.0,
-                "latency_sec": 24.973425149917603,
-                "throughput": 32.914988435325306,
-                "throughput_units": "chars/sec",
-                "error": null
             }
         ]
     }
