@@ -66,6 +66,27 @@ def _get_device(config_device: str = "auto") -> str:
 
 def convert(source_file: str, destination_file: str) -> None:
     import torch
+    
+    # Monkey-patch to avoid docling/transformers/accelerate crashes on Intel Arc when querying device memory info
+    if hasattr(torch, "xpu"):
+        def _patched_mem_get_info(device=None):
+            if device is None:
+                try:
+                    device = torch.xpu.current_device()
+                except Exception:
+                    device = 0
+            try:
+                total = torch.xpu.get_device_properties(device).total_memory
+            except Exception:
+                total = 16 * 1024**3  # Fallback to 16GB
+            allocated = torch.xpu.memory_allocated(device)
+            free = max(total - allocated, 0)
+            return free, total
+        torch.xpu.mem_get_info = _patched_mem_get_info
+
+    if hasattr(torch, "cuda") and hasattr(torch, "xpu"):
+        # In case some libraries query torch.cuda instead of torch.xpu
+        torch.cuda.mem_get_info = torch.xpu.mem_get_info
     from pypdf import PdfReader, PdfWriter
     from docling.datamodel.base_models import InputFormat
     from docling.document_converter import DocumentConverter, PdfFormatOption

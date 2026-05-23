@@ -8,6 +8,7 @@ dependencies = [
     "pycryptodome>=3.23.0",
     "pypdf>=6.9.2",
     "torch>=2.10.0",
+    "torchvision",
 ]
 
 
