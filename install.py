@@ -120,6 +120,11 @@ def main():
         print(f"\nSyncing {item.name}...")
         run_command(["uv", "sync"] + (["--offline"] if args.offline else []), cwd=item)
 
+        # macOS specific overlay for md_converter: install macocr for GPU-based Vision OCR
+        if is_macos and item.name == "md_converter":
+            print(f"Installing macOS-specific OCR dependency (macocr) for {item.name}...")
+            run_command(["uv", "pip", "install", "macocr"], cwd=item)
+
         # Trigger initialization by querying capabilities
         script = item / f"{item.name}.py"
         if script.exists():
