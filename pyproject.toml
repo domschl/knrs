@@ -18,6 +18,7 @@ knrs = "knrs:main"
 [tool.hatch.build.targets.wheel]
 packages = [
     "agent",
+    "benchmark",
     "calibre",
     "external_lib",
     "repl",

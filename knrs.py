@@ -89,6 +89,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_p.add_argument("--checkpoint-every-docs", type=int, metavar="N")
     sync_p.add_argument("--checkpoint-every-chunks", type=int, metavar="M")
 
+    # benchmark
+    benchmark_p = subparsers.add_parser("benchmark", help="Run testing and benchmark framework for subprocesses.")
+    benchmark_p.add_argument("--type", choices=["converter", "summarizer", "embedder", "agent"], help="Run only a specific category of subprocesses.")
+    benchmark_p.add_argument("--backend", help="Run benchmark for a single specific backend (e.g. embedder_hf).")
+    benchmark_p.add_argument("--results", help="Path to write the results JSON (default: benchmark_results.json in workspace root).")
+
     # repl
     subparsers.add_parser("repl", help="Start the interactive REPL (default).")
 
@@ -247,6 +253,61 @@ def main() -> None:
             mock_args.extend(["--checkpoint-every-chunks", str(args.checkpoint_every_chunks)])
         
         cmd_sync(mock_args, cfg)
+
+    elif args.command == "benchmark":
+        from pathlib import Path
+        from benchmark.runner import BenchmarkRunner
+        from rich.console import Console
+        from rich.table import Table
+
+        workspace_root = Path(__file__).parent.resolve()
+        results_path = Path(args.results) if args.results else None
+
+        runner = BenchmarkRunner(workspace_root, results_path=results_path)
+
+        console = Console()
+        with console.status("[bold green]Running benchmarks... (this may take a few minutes if local models are loaded)") as status:
+            record = runner.run_all(filter_type=args.type, filter_backend=args.backend)
+
+        console.print("\n[bold green]Benchmark Completed Successfully![/bold green]")
+        console.print(f"Results saved to: [cyan]{runner.results_path}[/cyan]\n")
+
+        table = Table(title="knrs Subprocess Benchmark Results")
+        table.add_column("Backend", style="bold cyan")
+        table.add_column("Type", style="magenta")
+        table.add_column("Task", style="blue")
+        table.add_column("Status", style="bold")
+        table.add_column("Load Time", justify="right")
+        table.add_column("Latency", justify="right")
+        table.add_column("Throughput", justify="right")
+        table.add_column("Details / Error", style="red")
+
+        for res in record["results"]:
+            status_style = "green" if res["pass_fail"] == "pass" else "red"
+            status_text = f"[{status_style}]{res['pass_fail'].upper()}[/{status_style}]"
+
+            load_time = f"{res['load_time_sec']:.2f}s" if res['load_time_sec'] > 0 else "-"
+            latency = f"{res['latency_sec']:.2f}s"
+
+            if res["pass_fail"] == "pass" and res["throughput"] > 0:
+                throughput = f"{res['throughput']:.2f} {res['throughput_units']}"
+            else:
+                throughput = "-"
+
+            details = res["error"] or "-"
+
+            table.add_row(
+                res["backend"],
+                res["backend_type"],
+                res["task_name"],
+                status_text,
+                load_time,
+                latency,
+                throughput,
+                details
+            )
+
+        console.print(table)
 
     elif args.command in (None, "repl"):
         from repl.repl import run_repl
