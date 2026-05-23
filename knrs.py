@@ -94,6 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark_p.add_argument("--type", choices=["converter", "summarizer", "embedder", "agent"], help="Run only a specific category of subprocesses.")
     benchmark_p.add_argument("--backend", help="Run benchmark for a single specific backend (e.g. embedder_hf).")
     benchmark_p.add_argument("--results", help="Path to write the results JSON (default: benchmark_results.json in workspace root).")
+    benchmark_p.add_argument("--visualize", action="store_true", help="Launch the local visualization dashboard in your web browser.")
 
     # repl
     subparsers.add_parser("repl", help="Start the interactive REPL (default).")
@@ -256,12 +257,63 @@ def main() -> None:
 
     elif args.command == "benchmark":
         from pathlib import Path
+        workspace_root = Path(__file__).parent.resolve()
+        results_path = Path(args.results) if args.results else None
+
+        if args.visualize:
+            import http.server
+            import socketserver
+            import webbrowser
+            import threading
+            import time
+            import os
+            import shutil
+
+            # Find a free port
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(('', 0))
+            port = s.getsockname()[1]
+            s.close()
+
+            # If a custom results file is provided, copy it to the workspace root temporarily
+            temp_copied = False
+            target_results = workspace_root / "benchmark_results.json"
+            if results_path and results_path.exists() and results_path.resolve() != target_results.resolve():
+                shutil.copy2(results_path, target_results)
+                temp_copied = True
+
+            original_cwd = os.getcwd()
+            os.chdir(workspace_root)
+
+            class SilentHTTPHandler(http.server.SimpleHTTPRequestHandler):
+                def log_message(self, format, *args):
+                    pass  # Mute HTTP logs to keep the console clean
+
+            try:
+                url = f"http://localhost:{port}/benchmark/visualizer.html"
+                print(f"Starting benchmark visualizer server at {url}")
+                print("Press Ctrl+C to stop the server.")
+
+                def open_browser():
+                    time.sleep(0.5)
+                    webbrowser.open(url)
+
+                threading.Thread(target=open_browser, daemon=True).start()
+
+                with socketserver.TCPServer(("", port), SilentHTTPHandler) as httpd:
+                    httpd.serve_forever()
+            except KeyboardInterrupt:
+                print("\nVisualizer server stopped.")
+            finally:
+                os.chdir(original_cwd)
+                if temp_copied and target_results.exists():
+                    target_results.unlink()
+            return
+
         from benchmark.runner import BenchmarkRunner
         from rich.console import Console
         from rich.table import Table
-
-        workspace_root = Path(__file__).parent.resolve()
-        results_path = Path(args.results) if args.results else None
 
         runner = BenchmarkRunner(workspace_root, results_path=results_path)
 
