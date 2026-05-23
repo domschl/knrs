@@ -313,10 +313,25 @@ class BenchmarkRunner:
                 
                 # Check keyword overlap (should share at least 3 unique content words with source)
                 else:
-                    overlap_words = calculate_content_overlap(self.test_text, summary_content)
-                    if len(overlap_words) < 3:
+                    body_content = summary_content
+                    if summary_content.startswith("---"):
+                        parts = summary_content.split("---", 2)
+                        if len(parts) >= 3:
+                            body_content = parts[2]
+                    body_content = body_content.strip()
+
+                    if not body_content:
                         passed = False
-                        err_msg = f"Soft failure: Summary content overlap too low. Words shared: {sorted(overlap_words)}"
+                        err_msg = "Soft failure: Summary body content is empty (possibly cut off in thinking phase)."
+                    elif "[summary blocked" in body_content.lower() or "blocked or empty" in body_content.lower():
+                        passed = False
+                        err_msg = f"Soft failure: Summary generation was blocked or returned empty. Got: '{body_content}'"
+                    else:
+                        overlap_words = calculate_content_overlap(self.test_text, body_content)
+                        if len(overlap_words) < 3:
+                            passed = False
+                            trunc_sum = body_content[:100] + ("..." if len(body_content) > 100 else "")
+                            err_msg = f"Soft failure: Summary content overlap too low. Words shared: {sorted(overlap_words)}. Got: '{trunc_sum}'"
             
             throughput = len(summary_content) / elapsed if (passed and elapsed > 0) else 0
             
