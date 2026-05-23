@@ -333,5 +333,102 @@
                 "error": "Agent subprocess did not send READY; got: ''"
             }
         ]
+    },
+    {
+        "timestamp": "2026-05-23T18:31:56.087652",
+        "hostname": "pergamon",
+        "os": "Linux 7.0.9-arch2-1",
+        "cpu": "13th Gen Intel(R) Core(TM) i5-13500",
+        "accelerator": "CUDA (NVIDIA GeForce RTX 4070 Ti)",
+        "results": [
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_pdf",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 17.646137714385986,
+                "throughput": 5.156935839042693,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_epub",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 3.3086276054382324,
+                "throughput": 165.92982513282396,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "summarizer_gc_gemma4_31b",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 62.19317293167114,
+                "throughput": 18.056644275631182,
+                "throughput_units": "chars/sec",
+                "error": null
+            },
+            {
+                "backend": "summarizer_api",
+                "backend_type": "summarizer",
+                "task_name": "summarize",
+                "pass_fail": "fail",
+                "load_time_sec": 0.0,
+                "latency_sec": 16.210784673690796,
+                "throughput": 0,
+                "throughput_units": "chars/sec",
+                "error": "Soft failure: Summary body content is empty (possibly cut off in thinking phase)."
+            },
+            {
+                "backend": "embedder_hf",
+                "backend_type": "embedder",
+                "task_name": "embed_batch",
+                "pass_fail": "fail",
+                "load_time_sec": 5.358744144439697,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "embeddings/sec",
+                "error": "Embedder subprocess did not send READY; got: ''"
+            },
+            {
+                "backend": "embedder_api",
+                "backend_type": "embedder",
+                "task_name": "embed_batch",
+                "pass_fail": "pass",
+                "load_time_sec": 0.14058756828308105,
+                "latency_sec": 0.7309296131134033,
+                "throughput": 6.840603951866775,
+                "throughput_units": "embeddings/sec",
+                "error": null
+            },
+            {
+                "backend": "agent_api",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "fail",
+                "load_time_sec": 0.09972214698791504,
+                "latency_sec": 8.965404272079468,
+                "throughput": 0.0,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": "Agent returned an empty response."
+            },
+            {
+                "backend": "agent_hf",
+                "backend_type": "agent",
+                "task_name": "chat_generation",
+                "pass_fail": "fail",
+                "load_time_sec": 4931.613409519196,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "tokens/sec (estimated)",
+                "error": "Agent subprocess did not send READY; got: ''"
+            }
+        ]
     }
 ]
