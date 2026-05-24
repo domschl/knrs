@@ -103,6 +103,53 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # 1. Pre-parse global options so we can handle slash commands one-shot
+    global_parser = argparse.ArgumentParser(add_help=False)
+    global_parser.add_argument("--verbose", "-v", action="store_true")
+    global_parser.add_argument("--config", metavar="PATH")
+    global_args, remaining = global_parser.parse_known_args()
+
+    # 2. Check if a slash command is called as a CLI argument
+    if remaining:
+        cmd_cand: str = remaining[0]
+        # Only intercept if it's not a standard subcommand
+        standard_subcommands: set[str] = {
+            "config",
+            "sync-calibre",
+            "sync-summaries",
+            "sync-wiki",
+            "timeline",
+            "index",
+            "search",
+            "sync",
+            "benchmark",
+            "repl",
+        }
+        if cmd_cand not in standard_subcommands:
+            slash_cmd: str = cmd_cand if cmd_cand.startswith("/") else f"/{cmd_cand}"
+            from repl.commands import COMMANDS
+            if slash_cmd in COMMANDS:
+                setup_logging(verbose=global_args.verbose)
+
+                from config import load_config
+                cfg_path: Path | None = Path(global_args.config) if global_args.config else None
+                try:
+                    cfg = load_config(cfg_path)
+                except Exception as e:
+                    print(f"Error loading config: {e}", file=sys.stderr)
+                    sys.exit(1)
+
+                from repl.commands import init_git_state
+                init_git_state(cfg)
+                try:
+                    COMMANDS[slash_cmd](remaining[1:], cfg)
+                except Exception as e:
+                    from rich.console import Console
+                    Console().print(f"[red]Error executing {slash_cmd}: {e}[/red]")
+                    sys.exit(1)
+                sys.exit(0)
+
+    # Fall back to standard argparse parsing if not a custom slash command
     parser = _build_parser()
     args = parser.parse_args()
     setup_logging(verbose=args.verbose)
@@ -115,7 +162,6 @@ def main() -> None:
     except Exception as e:
         print(f"Error loading config: {e}", file=sys.stderr)
         sys.exit(1)
-
 
     if args.command == "config":
         from config import print_config
