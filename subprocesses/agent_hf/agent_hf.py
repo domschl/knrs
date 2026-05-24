@@ -11,9 +11,16 @@
 
 from __future__ import annotations
 
+import sys
+# Prevent Triton import crashes if Triton is broken or incomplete (common on CPU-only/some environments)
+try:
+    import triton
+    import triton.language
+except Exception:
+    sys.modules['triton'] = None
+
 import json
 import signal
-import sys
 import logging
 import threading
 import os
