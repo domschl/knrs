@@ -644,26 +644,3 @@ class BenchmarkRunner:
             logger.info("Results saved to: %s", self.results_path)
         except Exception as e:
             logger.error("Failed to save benchmark results: %s", e)
-
-        # 2. Also update the user's config directory backup (keeping latest per host too)
-        config_results_path = Path.home() / ".config" / "knrs" / "benchmark_runs.json"
-        config_history = []
-        if config_results_path.exists():
-            try:
-                content = config_results_path.read_text(encoding="utf-8")
-                if content.strip():
-                    config_history = json.loads(content)
-                    if not isinstance(config_history, list):
-                        config_history = [config_history]
-            except Exception as e:
-                logger.error("Failed to read global benchmark backup: %s", e)
-
-        config_history = merge_run_record(config_history, run_record)
-
-        try:
-            config_results_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_config_path = config_results_path.with_suffix(".json.tmp")
-            temp_config_path.write_text(json.dumps(config_history, indent=4), encoding="utf-8")
-            temp_config_path.replace(config_results_path)
-        except Exception as e:
-            logger.error("Failed to save global benchmark backup: %s", e)
