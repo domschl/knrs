@@ -11,15 +11,8 @@
 
 from __future__ import annotations
 
-import sys
-# Prevent Triton import crashes if Triton is broken or incomplete (common on CPU-only/some environments)
-try:
-    import triton
-    import triton.language
-except Exception:
-    sys.modules['triton'] = None
-
 import json
+import sys
 import signal
 import logging
 import threading
@@ -48,6 +41,14 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("agent_hf")
+
+# Prevent Triton import crashes if Triton is broken or incomplete (common on CPU-only/some environments)
+try:
+    import triton
+    import triton.language
+except Exception as e:
+    logger.warning("Triton import failed or is incomplete. Disabling Triton: %s", e)
+    sys.modules['triton'] = None
 
 # Noise filter for external libraries
 class NoiseFilter(logging.Filter):
