@@ -1,6 +1,6 @@
 [
     {
-        "timestamp": "2026-05-23T13:35:02.255037",
+        "timestamp": "2026-05-24T12:00:30.044993",
         "hostname": "m4mini.fritz.box",
         "os": "Darwin 25.5.0",
         "cpu": "Apple M4",
@@ -12,8 +12,8 @@
                 "task_name": "convert_pdf",
                 "pass_fail": "pass",
                 "load_time_sec": 0.0,
-                "latency_sec": 20.48852825164795,
-                "throughput": 4.44150984796483,
+                "latency_sec": 18.270574,
+                "throughput": 5.489634,
                 "throughput_units": "chars/sec",
                 "error": null
             },
@@ -23,8 +23,8 @@
                 "task_name": "convert_epub",
                 "pass_fail": "pass",
                 "load_time_sec": 0.0,
-                "latency_sec": 3.1534688472747803,
-                "throughput": 174.09399825669576,
+                "latency_sec": 3.040285,
+                "throughput": 181.709178,
                 "throughput_units": "chars/sec",
                 "error": null
             },
@@ -43,12 +43,12 @@
                 "backend": "summarizer_gc_gemma4_31b",
                 "backend_type": "summarizer",
                 "task_name": "summarize",
-                "pass_fail": "pass",
+                "pass_fail": "fail",
                 "load_time_sec": 0.0,
-                "latency_sec": 56.97210478782654,
-                "throughput": 19.55342889557475,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
                 "throughput_units": "chars/sec",
-                "error": null
+                "error": "Soft failure: Summary generation was blocked or returned empty. Got: '[Summary blocked or empty response]'"
             },
             {
                 "backend": "summarizer_macos",
@@ -77,9 +77,9 @@
                 "backend_type": "embedder",
                 "task_name": "embed_batch",
                 "pass_fail": "pass",
-                "load_time_sec": 4.252686977386475,
-                "latency_sec": 0.46954917907714844,
-                "throughput": 10.648511855194798,
+                "load_time_sec": 4.236857,
+                "latency_sec": 0.42068,
+                "throughput": 12.95927,
                 "throughput_units": "embeddings/sec",
                 "error": null
             },
@@ -99,9 +99,9 @@
                 "backend_type": "agent",
                 "task_name": "chat_generation",
                 "pass_fail": "pass",
-                "load_time_sec": 8.544486999511719,
-                "latency_sec": 15.35299801826477,
-                "throughput": 2.5402204802999035,
+                "load_time_sec": 8.463926,
+                "latency_sec": 14.956024,
+                "throughput": 2.615654,
                 "throughput_units": "tokens/sec (estimated)",
                 "error": null
             },
