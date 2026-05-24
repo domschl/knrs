@@ -93,7 +93,7 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark_p = subparsers.add_parser("benchmark", help="Run testing and benchmark framework for subprocesses.")
     benchmark_p.add_argument("--type", choices=["converter", "summarizer", "embedder", "agent"], help="Run only a specific category of subprocesses.")
     benchmark_p.add_argument("--backend", help="Run benchmark for a single specific backend (e.g. embedder_hf).")
-    benchmark_p.add_argument("--results", help="Path to write the results JSON (default: benchmark_results.json in workspace root).")
+    benchmark_p.add_argument("--results", help="Path to write the results JSON (default: benchmark_<hostname>.json in benchmark_path).")
     benchmark_p.add_argument("--visualize", action="store_true", help="Launch the local visualization dashboard in your web browser.")
 
     # repl
@@ -322,19 +322,52 @@ def main() -> None:
             port = s.getsockname()[1]
             s.close()
 
-            # If a custom results file is provided, copy it to the workspace root temporarily
-            temp_copied = False
-            target_results = workspace_root / "benchmark_results.json"
-            if results_path and results_path.exists() and results_path.resolve() != target_results.resolve():
-                shutil.copy2(results_path, target_results)
-                temp_copied = True
-
             original_cwd = os.getcwd()
             os.chdir(workspace_root)
 
             class SilentHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 def log_message(self, format, *args):
                     pass  # Mute HTTP logs to keep the console clean
+
+                def do_GET(self):
+                    if self.path == "/benchmark_results.json":
+                        import json
+                        import sys
+                        try:
+                            if results_path:
+                                if results_path.exists():
+                                    data = results_path.read_bytes()
+                                else:
+                                    data = b"[]"
+                            else:
+                                aggregated = []
+                                benchmark_dir = cfg.benchmark_path
+                                if benchmark_dir.exists() and benchmark_dir.is_dir():
+                                    for f in benchmark_dir.glob("benchmark_*.json"):
+                                        try:
+                                            content = f.read_text(encoding="utf-8")
+                                            if content.strip():
+                                                runs = json.loads(content)
+                                                if isinstance(runs, list):
+                                                    aggregated.extend(runs)
+                                                else:
+                                                    aggregated.append(runs)
+                                        except Exception as ex:
+                                            print(f"Error loading {f.name}: {ex}", file=sys.stderr)
+                                data = json.dumps(aggregated, indent=4).encode("utf-8")
+
+                            self.send_response(200)
+                            self.send_header("Content-Type", "application/json")
+                            self.send_header("Access-Control-Allow-Origin", "*")
+                            self.send_header("Content-Length", str(len(data)))
+                            self.end_headers()
+                            self.wfile.write(data)
+                            return
+                        except Exception as e:
+                            self.send_error(500, f"Error generating benchmark results: {e}")
+                            return
+
+                    return super().do_GET()
 
             try:
                 url = f"http://localhost:{port}/benchmark/visualizer.html"
@@ -353,8 +386,6 @@ def main() -> None:
                 print("\nVisualizer server stopped.")
             finally:
                 os.chdir(original_cwd)
-                if temp_copied and target_results.exists():
-                    target_results.unlink()
             return
 
         from benchmark.runner import BenchmarkRunner

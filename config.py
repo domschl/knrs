@@ -37,6 +37,7 @@ class KnrsConfig:
     checkpoint_every_docs: int = 50
     checkpoint_every_chunks: int = 5000
     external_library: Path = field(default_factory=lambda: Path("~/MetaLibrary").expanduser().resolve())
+    benchmark_path: Path = field(default_factory=lambda: Path("~/.config/knrs/benchmarks").expanduser().resolve())
 
     # ------------------------------------------------------------------ #
     # Derived path helpers                                                 #
@@ -73,6 +74,60 @@ class KnrsConfig:
     @property
     def ai_notes_books(self) -> Path:
         return self.ai_notes / "Books"
+
+
+def _migrate_legacy_benchmarks(workspace_root: Path, benchmark_path: Path) -> None:
+    legacy_file = workspace_root / "benchmark_results.json"
+    if not legacy_file.exists():
+        return
+
+    logger.info("Migrating legacy benchmark results from %s to %s", legacy_file, benchmark_path)
+    try:
+        with legacy_file.open("r", encoding="utf-8") as fh:
+            content = fh.read()
+            if not content.strip():
+                legacy_file.unlink()
+                return
+            history = json.loads(content)
+            if not isinstance(history, list):
+                history = [history]
+
+        benchmark_path.mkdir(parents=True, exist_ok=True)
+
+        # Group by hostname
+        by_host: dict[str, list[dict[str, Any]]] = {}
+        for record in history:
+            if isinstance(record, dict) and "hostname" in record:
+                by_host.setdefault(record["hostname"], []).append(record)
+
+        from benchmark.runner import merge_run_record
+
+        for host, records in by_host.items():
+            host_file = benchmark_path / f"benchmark_{host}.json"
+            existing_history: list[dict[str, Any]] = []
+            if host_file.exists():
+                try:
+                    with host_file.open("r", encoding="utf-8") as fh:
+                        existing_content = fh.read()
+                        if existing_content.strip():
+                            existing_history = json.loads(existing_content)
+                            if not isinstance(existing_history, list):
+                                existing_history = [existing_history]
+                except Exception as e:
+                    logger.error("Failed to read existing host file %s during migration: %s", host_file, e)
+
+            for record in records:
+                existing_history = merge_run_record(existing_history, record)
+
+            temp_path = host_file.with_suffix(".json.tmp")
+            with temp_path.open("w", encoding="utf-8") as fh:
+                json.dump(existing_history, fh, indent=4)
+            temp_path.replace(host_file)
+
+        legacy_file.unlink()
+        logger.info("Successfully migrated legacy benchmark results and deleted %s", legacy_file)
+    except Exception as e:
+        logger.error("Error migrating legacy benchmark results: %s", e)
 
 
 def load_config(config_path: Path | None = None) -> KnrsConfig:
@@ -141,6 +196,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(external_library_raw, str):
         raise ValueError("Config key 'external_library' must be a string.")
 
+    benchmark_path_raw = raw.get("benchmark_path", "~/.config/knrs/benchmarks")
+    if not isinstance(benchmark_path_raw, str):
+        raise ValueError("Config key 'benchmark_path' must be a string.")
+
     vector_chunk_size = raw.get("vector_chunk_size", 3000)
     if not isinstance(vector_chunk_size, int):
         raise ValueError("Config key 'vector_chunk_size' must be an integer.")
@@ -170,6 +229,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         embedder_name=embedder_name,
         calibre_library_name=calibre_library_name,
         external_library=resolve(external_library_raw),
+        benchmark_path=resolve(benchmark_path_raw),
         vector_chunk_size=vector_chunk_size,
         vector_chunk_overlap=vector_chunk_overlap,
         checkpoint_every_docs=checkpoint_every_docs,
@@ -189,6 +249,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  agent_backend:   %s", cfg.agent_backend_name)
     logger.debug("  calibre_library_name: %s", cfg.calibre_library_name)
     logger.debug("  external_library: %s", cfg.external_library)
+    logger.debug("  benchmark_path:  %s", cfg.benchmark_path)
+
+    # Perform one-time migration of legacy benchmark results
+    _migrate_legacy_benchmarks(Path(__file__).parent.resolve(), cfg.benchmark_path)
 
     return cfg
 
@@ -216,6 +280,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("agent_backend_name", cfg.agent_backend_name),
         ("calibre_library_name", cfg.calibre_library_name),
         ("external_library", str(cfg.external_library)),
+        ("benchmark_path", str(cfg.benchmark_path)),
         ("vector_chunk_size", str(cfg.vector_chunk_size)),
         ("vector_chunk_overlap", str(cfg.vector_chunk_overlap)),
         ("checkpoint_every_docs", str(cfg.checkpoint_every_docs)),
