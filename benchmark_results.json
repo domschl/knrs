@@ -430,5 +430,36 @@
                 "error": "Agent subprocess did not send READY; got: ''"
             }
         ]
+    },
+    {
+        "timestamp": "2026-05-24T09:36:12.723356",
+        "hostname": "voidship",
+        "os": "Linux 7.0.9-arch2-1",
+        "cpu": "Intel(R) Core(TM) i5-8365U CPU @ 1.60GHz",
+        "accelerator": "Intel XPU/GPU",
+        "results": [
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_pdf",
+                "pass_fail": "fail",
+                "load_time_sec": 0.0,
+                "latency_sec": 0.0,
+                "throughput": 0.0,
+                "throughput_units": "chars/sec",
+                "error": "Command '['/home/dsc/Codeberg/knrs/subprocesses/md_converter/.venv/bin/python', '/home/dsc/Codeberg/knrs/subprocesses/md_converter/md_converter.py', '/tmp/tmpgvsfhpcg/test.pdf', '/tmp/tmpgvsfhpcg/pdf_converted.md']' timed out after 120 seconds"
+            },
+            {
+                "backend": "md_converter",
+                "backend_type": "converter",
+                "task_name": "convert_epub",
+                "pass_fail": "pass",
+                "load_time_sec": 0.0,
+                "latency_sec": 6.583614826202393,
+                "throughput": 83.38883948906198,
+                "throughput_units": "chars/sec",
+                "error": null
+            }
+        ]
     }
 ]
