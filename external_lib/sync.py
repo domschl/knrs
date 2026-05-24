@@ -15,14 +15,15 @@ from naming import generate_external_lib_filename
 
 logger = logging.getLogger(__name__)
 
-def _find_book_file(book_dir: Path) -> Path | None:
-    """Find an EPUB or PDF file in the Calibre book directory."""
+def _find_book_files(book_dir: Path) -> list[Path]:
+    """Find EPUB and/or PDF files in the Calibre book directory."""
     files = {f.suffix.lower(): f for f in book_dir.iterdir() if f.is_file()}
+    found = []
     if ".epub" in files:
-        return files[".epub"]
+        found.append(files[".epub"])
     if ".pdf" in files:
-        return files[".pdf"]
-    return None
+        found.append(files[".pdf"])
+    return found
 
 def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
     """
@@ -41,22 +42,20 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
     actions = []
 
     for uuid, book in calibre_index.items():
-        source_file = _find_book_file(book.book_dir)
-        if not source_file:
-            continue
+        source_files = _find_book_files(book.book_dir)
+        for source_file in source_files:
+            ext = source_file.suffix.lower()
+            base_name = generate_external_lib_filename(book.title, book.first_author)
+            target_name = f"{base_name}{ext}"
+            target_path = cfg.external_library / book.series_dir / target_name
             
-        ext = source_file.suffix.lower()
-        base_name = generate_external_lib_filename(book.title, book.first_author)
-        target_name = f"{base_name}{ext}"
-        target_path = cfg.external_library / book.series_dir / target_name
-        
-        valid_paths.add(unicodedata.normalize("NFC", str(target_path)))
-        valid_paths.add(unicodedata.normalize("NFC", str(target_path.parent)))  # Ensure series dir is valid
-        
-        if not target_path.exists():
-            actions.append(("COPY", source_file, target_path))
-        elif target_path.stat().st_size != source_file.stat().st_size:
-            actions.append(("UPDATE", source_file, target_path))
+            valid_paths.add(unicodedata.normalize("NFC", str(target_path)))
+            valid_paths.add(unicodedata.normalize("NFC", str(target_path.parent)))  # Ensure series dir is valid
+            
+            if not target_path.exists():
+                actions.append(("COPY", source_file, target_path))
+            elif target_path.stat().st_size != source_file.stat().st_size:
+                actions.append(("UPDATE", source_file, target_path))
 
     # Cleanup phase
     for p in cfg.external_library.rglob("*"):
