@@ -77,6 +77,91 @@ def calculate_content_overlap(source_text: str, summary_text: str) -> set[str]:
     return sum_words.intersection(src_words)
 
 
+def merge_run_record(history: list[dict[str, Any]], new_record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Merge a new run record into history, updating or creating the entry for this host.
+
+    - If a backend fails in the new run, numeric metrics are zeroed.
+    - If a backend passes in both the old and new runs, we apply a moving average
+      (0.8 * old + 0.2 * new) to numeric metrics, provided the old run didn't fail.
+    - Results for backends not tested in the new run are left unaltered.
+    """
+    current_hostname = new_record.get("hostname")
+
+    # 1. Preprocess new record's results to zero out failed metrics
+    preprocessed_results = []
+    for res in new_record.get("results", []):
+        res_copy = res.copy()
+        if res_copy.get("pass_fail") == "fail":
+            res_copy["load_time_sec"] = 0.0
+            res_copy["latency_sec"] = 0.0
+            res_copy["throughput"] = 0.0
+        preprocessed_results.append(res_copy)
+
+    # 2. Find existing record for this host
+    existing_record = None
+    existing_idx = -1
+    for i, entry in enumerate(history):
+        if isinstance(entry, dict) and entry.get("hostname") == current_hostname:
+            existing_record = entry
+            existing_idx = i
+            break
+
+    if existing_record is None:
+        # No existing record for this host, append the preprocessed new record
+        new_record_copy = new_record.copy()
+        new_record_copy["results"] = preprocessed_results
+        history.append(new_record_copy)
+        return history
+
+    # 3. Merge results
+    existing_results = existing_record.get("results", [])
+    existing_map = {}
+    for res in existing_results:
+        key = (res.get("backend"), res.get("backend_type"), res.get("task_name"))
+        existing_map[key] = res.copy()
+
+    for new_res in preprocessed_results:
+        key = (new_res.get("backend"), new_res.get("backend_type"), new_res.get("task_name"))
+        old_res = existing_map.get(key)
+
+        if new_res.get("pass_fail") == "pass":
+            if (
+                old_res is not None
+                and old_res.get("pass_fail") == "pass"
+                and old_res.get("latency_sec", 0.0) > 0.0
+            ):
+                # Calculate moving average (0.8 * old + 0.2 * new)
+                new_res["load_time_sec"] = round(
+                    0.8 * old_res.get("load_time_sec", 0.0) + 0.2 * new_res.get("load_time_sec", 0.0),
+                    6
+                )
+                new_res["latency_sec"] = round(
+                    0.8 * old_res.get("latency_sec", 0.0) + 0.2 * new_res.get("latency_sec", 0.0),
+                    6
+                )
+                new_res["throughput"] = round(
+                    0.8 * old_res.get("throughput", 0.0) + 0.2 * new_res.get("throughput", 0.0),
+                    6
+                )
+            existing_map[key] = new_res
+        else:
+            # failure, overwrite directly
+            existing_map[key] = new_res
+
+    # 4. Create updated record
+    updated_record = {
+        "timestamp": new_record.get("timestamp"),
+        "hostname": current_hostname,
+        "os": new_record.get("os"),
+        "cpu": new_record.get("cpu"),
+        "accelerator": new_record.get("accelerator"),
+        "results": list(existing_map.values()),
+    }
+
+    history[existing_idx] = updated_record
+    return history
+
+
 # ─── Benchmark Runner ─────────────────────────────────────────────────────────
 
 class BenchmarkRunner:
@@ -104,6 +189,21 @@ class BenchmarkRunner:
         logger.info("Starting knrs benchmark run...")
         logger.info("System details: CPU=%s, Accel=%s", self.sys_info["cpu"], self.sys_info["accelerator"])
 
+        from config import load_config
+        active_summarizer: str | None = None
+        active_embedder: str | None = None
+        active_agent: str | None = None
+        try:
+            user_cfg = load_config()
+            active_summarizer = user_cfg.summarizer_name
+            active_embedder = user_cfg.embedder_name
+            active_agent = user_cfg.agent_backend_name
+        except Exception as e:
+            logger.warning("Could not load user config to detect active backends: %s. Using defaults.", e)
+            active_summarizer = "summarizer_linux"
+            active_embedder = "embedder_hf"
+            active_agent = "agent_api"
+
         results = []
 
         with TemporaryDirectory() as tmpdir_str:
@@ -119,21 +219,39 @@ class BenchmarkRunner:
             if not filter_type or filter_type == "summarizer":
                 summarizers = self.backend_manager.get_backends("summarizer")
                 for name in summarizers:
-                    if not filter_backend or filter_backend == name:
+                    should_run = False
+                    if filter_backend:
+                        should_run = (filter_backend == name)
+                    else:
+                        should_run = (name == active_summarizer)
+                    
+                    if should_run:
                         results.extend(self._benchmark_summarizer(name, cfg, tmpdir))
 
             # 3. Benchmark Embedders
             if not filter_type or filter_type == "embedder":
                 embedders = self.backend_manager.get_backends("embedder")
                 for name in embedders:
-                    if not filter_backend or filter_backend == name:
+                    should_run = False
+                    if filter_backend:
+                        should_run = (filter_backend == name)
+                    else:
+                        should_run = (name == active_embedder)
+                    
+                    if should_run:
                         results.extend(self._benchmark_embedder(name, cfg))
 
             # 4. Benchmark Agents
             if not filter_type or filter_type == "agent":
                 agents = self.backend_manager.get_backends("agent")
                 for name in agents:
-                    if not filter_backend or filter_backend == name:
+                    should_run = False
+                    if filter_backend:
+                        should_run = (filter_backend == name)
+                    else:
+                        should_run = (name == active_agent)
+                    
+                    if should_run:
                         results.extend(self._benchmark_agent(name, cfg))
 
         # Compile final report object
@@ -505,14 +623,7 @@ class BenchmarkRunner:
             except Exception as e:
                 logger.error("Failed to read existing benchmark history: %s", e)
 
-        current_hostname = run_record.get("hostname")
-
-        # Filter out all existing entries for this hostname, then append the new record
-        history = [
-            entry for entry in history 
-            if not (isinstance(entry, dict) and entry.get("hostname") == current_hostname)
-        ]
-        history.append(run_record)
+        history = merge_run_record(history, run_record)
 
         try:
             temp_path = self.results_path.with_suffix(".json.tmp")
@@ -535,11 +646,7 @@ class BenchmarkRunner:
             except Exception as e:
                 logger.error("Failed to read global benchmark backup: %s", e)
 
-        config_history = [
-            entry for entry in config_history 
-            if not (isinstance(entry, dict) and entry.get("hostname") == current_hostname)
-        ]
-        config_history.append(run_record)
+        config_history = merge_run_record(config_history, run_record)
 
         try:
             config_results_path.parent.mkdir(parents=True, exist_ok=True)
