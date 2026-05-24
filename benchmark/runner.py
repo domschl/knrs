@@ -169,7 +169,18 @@ class BenchmarkRunner:
 
     def __init__(self, workspace_root: Path, results_path: Path | None = None) -> None:
         self.workspace_root = workspace_root
-        self.results_path = results_path or workspace_root / "benchmark_results.json"
+        if results_path is not None:
+            self.results_path = results_path
+        else:
+            from config import load_config
+            try:
+                cfg = load_config()
+                benchmark_dir = cfg.benchmark_path
+            except Exception:
+                benchmark_dir = Path("~/.config/knrs/benchmarks").expanduser().resolve()
+            
+            benchmark_dir.mkdir(parents=True, exist_ok=True)
+            self.results_path = benchmark_dir / f"benchmark_{socket.gethostname()}.json"
         self.backend_manager = BackendManager(workspace_root / "subprocesses")
         self.sys_info = get_system_info()
         
@@ -275,6 +286,7 @@ class BenchmarkRunner:
             knrs_data=tmpdir / "knrs_data",
             wiki_path=tmpdir / "wiki",
             vector_db_path=tmpdir / "vector_db.json",
+            benchmark_path=tmpdir / "benchmarks",
         )
 
     # ─── Converter Benchmarks ──────────────────────────────────────────────────
