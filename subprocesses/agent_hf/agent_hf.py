@@ -415,6 +415,51 @@ def coerce_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
             coerced[k] = v
     return coerced
 
+
+def parse_gemma_args(args_str: str) -> dict[str, Any] | str:
+    """Parse Gemma-style tool call arguments that may contain <|"|> string delimiters and bare keys."""
+    args_str = args_str.strip()
+    if not (args_str.startswith("{") and args_str.endswith("}")):
+        return args_str
+    
+    content = args_str[1:-1].strip()
+    if not content:
+        return {}
+        
+    pattern = r"(\w+)\s*:\s*(<\|\"\|>.*?<\|\"\|>|\[.*?\]|[^,]+)"
+    matches = re.findall(pattern, content, re.DOTALL)
+    
+    parsed: dict[str, Any] = {}
+    for key, val in matches:
+        val = val.strip()
+        if val.startswith("<|\"|>") and val.endswith("<|\"|>"):
+            parsed[key] = val[5:-5]
+        elif val.startswith("[") and val.endswith("]"):
+            elements_str = val[1:-1]
+            elem_pattern = r"<\|\"\|>(.*?)<\|\"\|>"
+            elems = re.findall(elem_pattern, elements_str)
+            if not elems:
+                elems = [e.strip() for e in elements_str.split(",") if e.strip()]
+            parsed[key] = elems
+        else:
+            val_lower = val.lower()
+            if val_lower == "true":
+                parsed[key] = True
+            elif val_lower == "false":
+                parsed[key] = False
+            elif val_lower == "null":
+                parsed[key] = None
+            else:
+                try:
+                    if "." in val:
+                        parsed[key] = float(val)
+                    else:
+                        parsed[key] = int(val)
+                except ValueError:
+                    parsed[key] = val
+    return parsed
+
+
 class HFAgentEngine:
     def _get_device(self, config_device: str = "auto") -> str:
         import torch
@@ -569,10 +614,15 @@ class HFAgentEngine:
                     args = json.loads(args_str)
                 except Exception:
                     try:
-                        import yaml
-                        args = yaml.safe_load(args_str)
+                        args = parse_gemma_args(args_str)
+                        if not isinstance(args, dict):
+                            raise ValueError("Not a dictionary")
                     except Exception:
-                        args = args_str
+                        try:
+                            import yaml
+                            args = yaml.safe_load(args_str)
+                        except Exception:
+                            args = args_str
                 
                 if isinstance(args, dict):
                     parsed_calls.append({
