@@ -4,10 +4,16 @@ knrs.__main__ — Entry point for `uv run python -m knrs`.
 
 from __future__ import annotations
 
+import os
+import sys
+
+# Silence macOS malloc stack logging warnings in this process and all subprocesses.
+if sys.platform == "darwin":
+    os.environ["MallocLogFile"] = "/dev/null"
+
 __version__ = "0.1.0"
 
 import argparse
-import sys
 from pathlib import Path
 
 from logging_setup import setup_logging
