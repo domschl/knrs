@@ -216,8 +216,41 @@ class AgentTools:
         except Exception as e:
             return f"Error reading file {path}: {e}"
 
+    def _get_search_cache_file(self) -> Path:
+        if "test_temp_sandbox" in str(self.config.knrs_data):
+            return self.config.knrs_data / "wikipedia_search_cache.json"
+        from paths import knrs_config_dir
+        return knrs_config_dir() / "wikipedia_search_cache.json"
+
+    def _load_search_cache(self) -> dict[str, str]:
+        cache_file = self._get_search_cache_file()
+        if cache_file.exists():
+            try:
+                with cache_file.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception as e:
+                logger.warning("Error loading wikipedia search cache: %s", e)
+        return {}
+
+    def _save_search_cache(self, cache: dict[str, str]) -> None:
+        cache_file = self._get_search_cache_file()
+        try:
+            from calibre.converter import atomic_write
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(cache_file, json.dumps(cache, indent=2, ensure_ascii=False))
+        except Exception as e:
+            logger.warning("Error saving wikipedia search cache: %s", e)
+
     def wikipedia_search(self, query: str) -> str:
         """Search Wikipedia for an article title."""
+        normalized_query = query.strip().lower()
+        cache = self._load_search_cache()
+        if normalized_query in cache:
+            logger.info("Using cached Wikipedia search results for query: '%s'", query)
+            return cache[normalized_query]
+
         try:
             import urllib.request
             import urllib.parse
@@ -239,14 +272,21 @@ class AgentTools:
                 
             search_results = data.get("query", {}).get("search", [])
             if not search_results:
-                return f"No Wikipedia articles found for '{query}'."
+                result_str = f"No Wikipedia articles found for '{query}'."
+                cache[normalized_query] = result_str
+                self._save_search_cache(cache)
+                return result_str
             
             output = [f"Search results for '{query}':"]
             for i, res in enumerate(search_results[:10], 1):
                 title = res["title"]
                 snippet = re.sub(r'<[^>]+>', '', res["snippet"]) # Remove HTML tags from snippet
                 output.append(f"{i}. {title} - {snippet}...")
-            return "\n".join(output)
+            result_str = "\n".join(output)
+            
+            cache[normalized_query] = result_str
+            self._save_search_cache(cache)
+            return result_str
         except Exception as e:
             return f"Error searching Wikipedia: {e}"
 

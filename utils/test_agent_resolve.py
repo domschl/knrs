@@ -107,6 +107,43 @@ def main():
         print(f"FAILED (got result: {result_lower})")
         failed = True
 
+    # 13. Test Wikipedia Search Cache Hit
+    print("Test 13: Wikipedia Search Cache Hit -> ", end="")
+    cache_file = tools._get_search_cache_file()
+    import json
+    cache_data = {"test query": "Search results for 'test query':\n1. Dummy Article - A snippet..."}
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(cache_data), encoding="utf-8")
+
+    result_search = tools.wikipedia_search("Test Query")
+    if result_search == cache_data["test query"]:
+        print("PASSED")
+    else:
+        print(f"FAILED (got result: {result_search})")
+        failed = True
+
+    # 14. Test Wikipedia Search Cache Write & Case Insensitivity
+    print("Test 14: Wikipedia Search Cache Write & Case Insensitivity -> ", end="")
+    from unittest.mock import patch, MagicMock
+    mock_response = MagicMock()
+    mock_response.read.return_value = b'{"query": {"search": [{"title": "Mocked Title", "snippet": "Mocked Snippet"}]}}'
+    mock_response.__enter__.return_value = mock_response
+    
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        result_uncached = tools.wikipedia_search("Unique Mock Query")
+        
+    new_cache = tools._load_search_cache()
+    if "unique mock query" in new_cache and "Mocked Title" in new_cache["unique mock query"]:
+        cached_val = tools.wikipedia_search("UNIQUE MOCK QUERY")
+        if cached_val == result_uncached:
+            print("PASSED")
+        else:
+            print(f"FAILED (case-insensitive hit mismatch: {cached_val})")
+            failed = True
+    else:
+        print("FAILED (not written to cache or incorrect value)")
+        failed = True
+
     # Cleanup
     print("\nCleaning up temporary sandbox directory...")
     if test_temp_dir.exists():
