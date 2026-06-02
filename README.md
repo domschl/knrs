@@ -41,7 +41,4 @@ uv run knrs --help
 
 ## Authors & AI Collaboration
 
-This repository is developed by **Dominik Schlösser** (<dominik.schloesser@gmail.com>) in collaboration with **Antigravity** (an AI coding assistant designed by Google DeepMind), who serves as a primary author of the agentic frameworks, codebase restructuring, and integration layers.
-
-> [!NOTE]
-> All commits in this repository are signed under the name/email of **Dominik Schlösser** to prevent incorrect email attribution on GitHub, though many contributions were authored by **Antigravity**.
+This repository is developed by **domschl** in collaboration with **Antigravity** (an AI coding assistant designed by Google DeepMind), who serves as a primary author of the agentic frameworks, codebase restructuring, and integration layers.
