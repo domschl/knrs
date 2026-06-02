@@ -14,6 +14,7 @@ python3 install.py
 ```
 
 *Note: In network-isolated or offline environments, you can run:*
+
 ```bash
 python3 install.py --offline
 ```
@@ -37,3 +38,10 @@ To list all available CLI commands:
 ```bash
 uv run knrs --help
 ```
+
+## Authors & AI Collaboration
+
+This repository is developed by **Dominik Schlösser** (<dominik.schloesser@gmail.com>) in collaboration with **Antigravity** (an AI coding assistant designed by Google DeepMind), who serves as a primary author of the agentic frameworks, codebase restructuring, and integration layers.
+
+> [!NOTE]
+> All commits in this repository are signed under the name/email of **Dominik Schlösser** to prevent incorrect email attribution on GitHub, though many contributions were authored by **Antigravity**.
