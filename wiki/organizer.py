@@ -10,8 +10,13 @@ from typing import Any
 
 from config import KnrsConfig
 from agent.engine import AgentSession
+from agent.tools import CACHE_DIR_NAMES
 
 logger = logging.getLogger("wiki_organizer")
+
+# Files that live under the Cache/ subtree are managed by agent tools
+# and must never be re-arranged by the organizer.
+_CACHE_SUBDIR = "Cache"
 
 def gather_research_files(research_root: Path) -> list[dict[str, Any]]:
     """Scan AINotes/Research/ and collect files metadata and body snippets."""
@@ -20,6 +25,9 @@ def gather_research_files(research_root: Path) -> list[dict[str, Any]]:
     # We walk recursively through the research directory
     for md_path in research_root.rglob("*.md"):
         if md_path.name.startswith(".") or ".sessions" in md_path.parts:
+            continue
+        # Skip files inside the Cache/ subtree
+        if _CACHE_SUBDIR in md_path.relative_to(research_root).parts:
             continue
         try:
             content = md_path.read_text(encoding="utf-8")
@@ -42,8 +50,9 @@ def gather_research_files(research_root: Path) -> list[dict[str, Any]]:
         title = meta.get("title") or md_path.stem
         tags = meta.get("tags") or []
         
-        # Grab first 600 characters of the body as a semantic snippet
-        snippet = body[:600].strip()
+        # Grab first 200 characters of the body as a semantic snippet
+        # (shorter = smaller prompt = more room for the large JSON output)
+        snippet = body[:200].strip()
         
         rel_path = md_path.relative_to(research_root)
         files_data.append({
@@ -97,9 +106,10 @@ Example output format:
         }
     ]
 
-    logger.info("Querying LLM for categorization...")
+    logger.info("Querying LLM for categorization (%d files)...", len(files_data))
     with AgentSession(config) as session:
-        response = session.generate(messages)
+        # Use a generous token budget so the full mapping JSON is never truncated.
+        response = session.generate(messages, max_tokens=32000)
 
     res_text = response.strip()
     
@@ -127,7 +137,18 @@ Example output format:
     # Look for first '{' and last '}'
     start = candidate.find("{")
     end = candidate.rfind("}")
-    if start != -1 and end != -1:
+    if start != -1 and end == -1:
+        # Opening brace found but no closing brace — the response was cut off.
+        logger.error(
+            "LLM response was truncated (no closing '}' found). "
+            "Consider reducing the number of files or increasing max_tokens. "
+            "Partial response:\n%s", response[-500:]
+        )
+        raise RuntimeError(
+            "LLM response was cut off before the JSON was complete. "
+            "Try again or reduce the number of files being organised."
+        )
+    if start != -1 and end >= start:
         candidate = candidate[start:end+1]
         
     # Check if the output has ellipses/placeholders
@@ -223,6 +244,10 @@ def organize_research_directory(config: KnrsConfig, dry_run: bool = False) -> li
         current_rel = f["path"]
         proposed_rel = proposed_mapping.get(current_rel)
         if not proposed_rel:
+            continue
+
+        # Never touch files already inside Cache/
+        if _CACHE_SUBDIR in Path(current_rel).parts:
             continue
             
         # Enforce that the folder structure changes, but the filename stem remains the same

@@ -14,12 +14,17 @@ from config import KnrsConfig
 
 logger = logging.getLogger(__name__)
 
+# Cache subdirectories that are managed by agent tools and must NOT be reorganised.
+CACHE_DIR_NAMES: tuple[str, ...] = ("Wikipedia", "SEP", "arXiv", "InternetArchive")
+
 class AgentTools:
     def __init__(self, config: KnrsConfig) -> None:
         self.config: KnrsConfig = config
         self.research_root: Path = self.config.wiki_path / "AINotes" / "Research"
         self.research_root.mkdir(parents=True, exist_ok=True)
-        
+        self.cache_root: Path = self.research_root / "Cache"
+        self.cache_root.mkdir(parents=True, exist_ok=True)
+
     def _is_safe_read_path(self, path: Path) -> bool:
         """Check if a path is within the allowed read roots."""
         roots: list[Path] = [
@@ -298,7 +303,7 @@ class AgentTools:
 
             # Clean filename using wiki_title, allowing parenthesis
             safe_title = "".join([c if c.isalnum() or c in " -_()" else "_" for c in wiki_title])
-            wiki_dir = self.research_root / "Wikipedia"
+            wiki_dir = self.cache_root / "Wikipedia"
             file_path = wiki_dir / f"{safe_title}.md"
 
             # Check local cache first (case-insensitive)
@@ -802,7 +807,7 @@ class AgentTools:
         req = urllib.request.Request(url, headers={"User-Agent": self._SEP_UA})
 
         # Cache path
-        sep_dir = self.research_root / "SEP"
+        sep_dir = self.cache_root / "SEP"
         safe_name = re.sub(r"[^\w\s-]", "_", entry)
         file_path = sep_dir / f"{safe_name} (SEP).md"
 
@@ -1011,7 +1016,7 @@ class AgentTools:
 
         arxiv_id = arxiv_id.strip()
         cache_id = arxiv_id.replace("/", "_").replace(".", "_")
-        arxiv_dir = self.research_root / "arXiv"
+        arxiv_dir = self.cache_root / "arXiv"
         file_path = arxiv_dir / f"{cache_id} (arXiv).md"
 
         if file_path.exists():
@@ -1402,7 +1407,7 @@ class AgentTools:
         from calibre.converter import atomic_write
 
         identifier = identifier.strip()
-        ia_dir = self.research_root / "InternetArchive"
+        ia_dir = self.cache_root / "InternetArchive"
         safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in identifier)
         file_path = ia_dir / f"{safe_id} (Internet Archive).md"
 

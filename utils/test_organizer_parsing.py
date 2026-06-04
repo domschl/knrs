@@ -106,6 +106,22 @@ Checking constraints: "Do NOT use '...' or placeholders under any circumstances.
         assert result == {"file1.md": "History/file1.md"}
         print("Passed thinking block with quoted backticks.")
 
+        # Test 6: Cut-off response (no closing brace — max_tokens hit mid-JSON)
+        response_cutoff = """```json
+{
+  "file1.md": "History/file1.md",
+  "file2.md": "Science/file2.md
+"""
+        mock_session.generate.return_value = response_cutoff
+        print("Testing cut-off response detection...")
+        try:
+            classify_research_files(cfg, files_dummy)
+            raise AssertionError("Should have raised RuntimeError for cut-off response!")
+        except RuntimeError as e:
+            print(f"Caught expected error: {e}")
+            assert "cut off" in str(e).lower() or "not a parseable" in str(e).lower()
+        print("Passed cut-off response detection.")
+
     print("\nAll organizer parsing tests PASSED!")
 
 if __name__ == "__main__":

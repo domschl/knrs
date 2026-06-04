@@ -86,7 +86,7 @@ def main():
 
     # 11. Test Wikipedia Local Cache Hit (Exact match)
     print("\nTest 11: Wikipedia Local Cache Hit (Exact Case) -> ", end="")
-    wiki_wiki_dir = config.wiki_path / "AINotes" / "Research" / "Wikipedia"
+    wiki_wiki_dir = config.wiki_path / "AINotes" / "Research" / "Cache" / "Wikipedia"
     wiki_wiki_dir.mkdir(parents=True, exist_ok=True)
     cached_art = wiki_wiki_dir / "Dummy Wiki Article (Wikipedia).md"
     cached_art.write_text("---\ntitle: \"Dummy Wiki Article (Wikipedia)\"\nsource: \"Wikipedia\"\n---\n\n# Dummy Wiki Article (Wikipedia)\n\nDummy Article Content", encoding="utf-8")
