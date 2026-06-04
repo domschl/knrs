@@ -53,7 +53,7 @@ If your Python scripts or research workflow generates files:
 """
 
 SOURCE_PRIORITY = """\
-SOURCE PRIORITY — use sources in this order:
+SOURCE PRIORITY & VERIFICATION — use sources in this order:
 1. `vector_search` + `file_read` — local curated library (always first)
 2. `sep_search` / `sep_fetch` — Stanford Encyclopedia of Philosophy (philosophy topics)
 3. `wikipedia_search` / `wikipedia_fetch` — broad background and overviews
@@ -62,7 +62,19 @@ SOURCE PRIORITY — use sources in this order:
 6. `arxiv_search` / `arxiv_fetch` — scientific preprints and recent research
 7. `openalex_search` — peer-reviewed literature across all fields
 8. `python_eval` — numerical calculations, statistics, unit conversions
-9. `maxima_eval` — symbolic mathematics (if available)\
+9. `maxima_eval` — symbolic mathematics (if available)
+
+CRITICAL SOURCE WORKFLOW:
+- Always start your research by querying local sources (`vector_search` + `file_read`).
+- Do not rely solely on local data. You MUST cross-reference, verify, and enrich your findings by querying relevant external research tools (Wikipedia, SEP, Wikidata, Archive, OpenAlex, arXiv) as applicable. A high-quality synthesis always bridges local context with established external scholarship.\
+"""
+
+RESEARCH_PHILOSOPHY = """\
+RESEARCH PHILOSOPHY & OBJECTIVITY:
+- Local sources in your library may present non-mainstream, exploratory, or alternative theories.
+- You are encouraged to explore the frontiers of knowledge beyond mainstream consensus. Hypothetical reasoning and exploratory theories should be allowed and analyzed fairly.
+- When comparing alternative views with mainstream or established consensus, your evaluation must be strictly objective, neutral, and fact-driven.
+- Avoid using dismissive or loaded labels like "fringe", "pseudo-scientific", "conspiracy theory", or similar language. Instead, analyze the arguments, evidence, and facts transparently, allowing the reader to see the strengths and weaknesses of each perspective.\
 """
 
 # Included only for raw-LLM backends that do not handle tool schemas natively.
@@ -125,14 +137,26 @@ The level-1 heading (`# Title`) must come AFTER the frontmatter. Example:
   title: "Topic Name"
   context: "AINotes/Research/Topic Name"
   sources:
-    - "books:Path To Source.md"
+    - "books:Path/To/Source.md"
+    - "wiki:Notes/Alternative Theories.md"
+    - "Wikipedia: Francis Bacon"
+    - "arXiv:2304.12345"
   ---
   # Topic Name
-- Always include inline citations referencing the sources you used \
-(e.g. "[1]" or "(Author, Title)").
-- IMPORTANT: If you use numbered citations like "[1]", you MUST append a \
-`## References` section at the very end of your document mapping each number to \
-its exact source path and title. Unresolved numeric citations are strictly forbidden.
+
+Citing Sources:
+- You must carefully track all sources (both local files and external database entries/articles) that you retrieve and use.
+- Every major assertion, fact, or quote MUST be supported by an inline citation (e.g., `[1]` or `[books:Path/To/Source.md#L45]`).
+- Do NOT mix up or generalize sources. Cite the specific file/article the fact came from.
+
+References Section:
+- You MUST append a `## References` section at the very end of your document.
+- Map every citation used in the text to its full details:
+  1. For local/curated sources (from `books:` or `wiki:`), provide the exact path/filename and, if applicable, the line numbers or section title.
+  2. For external sources (Wikipedia, SEP, Wikidata, OpenAlex, arXiv, Archive.org), provide the database/tool name, the official title of the paper/article/entity, authors, date/year, and URLs or identifiers (like DOI or arXiv ID).
+- Every citation in the text must have a corresponding entry in the References section, and every source in the YAML frontmatter must be represented.
+
+Timeline Tables:
 - If relevant, include timeline tables using this format:
   `| Date | Description | Context |`
   where Date is in IndraTime format (e.g. `-500` for 500 BC, `1200` for 1200 AD).\
@@ -165,6 +189,7 @@ def build_system_prompt(
         IDENTITY,
         KNOWLEDGE_BASE_LAYOUT,
         SOURCE_PRIORITY,
+        RESEARCH_PHILOSOPHY,
     ]
 
     if include_tools:
