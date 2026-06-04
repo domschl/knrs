@@ -1483,7 +1483,7 @@ class AgentTools:
         import subprocess
         import tempfile
 
-        venv_dir = self.config.knrs_data / "eval_venv"
+        venv_dir = self.config.knrs_data / "eval_env"
         if sys.platform == "win32":
             python_exe = venv_dir / "Scripts" / "python.exe"
         else:
@@ -1508,7 +1508,7 @@ class AgentTools:
                         check=True,
                         capture_output=True,
                     )
-                logger.info("Evaluation venv initialized successfully with scientific package stack.")
+                logger.info("Evaluation environment initialized successfully with scientific package stack.")
             except Exception as e:
                 logger.error(f"Failed to initialize evaluation venv: {e}")
                 return f"Error: Failed to initialize evaluation venv: {e}"
