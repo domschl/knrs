@@ -448,9 +448,12 @@ TOOL_REGISTRY: list[ToolDef] = [
     ToolDef(
         name="python_eval",
         description=(
-            "Execute a Python snippet in the local virtual environment and return its stdout/stderr. "
-            "Full standard library and installed packages are available (use import statements as needed). "
-            "Use for numerical computations, data parsing, unit conversions, statistics, and complex algorithms."
+            "Execute a Python snippet in a dedicated, isolated virtual environment and return its stdout/stderr. "
+            "Full standard library and scientific stack (numpy, pandas, matplotlib, sympy, scipy) are available. "
+            "IMPORTANT: Runs completely HEADLESS (do not call pyplot.show() or try to show UIs; instead, save plots/images to files). "
+            "All generated files MUST end up in the AINotes/Research/ folder or its subfolders: "
+            "save generated images to an 'Images' subdirectory, and other resources/data to a 'Resources' subdirectory "
+            "relative to the markdown report file you are creating."
         ),
         params=[
             ToolParam(

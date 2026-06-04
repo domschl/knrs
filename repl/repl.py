@@ -150,8 +150,14 @@ def run_repl(cfg: KnrsConfig):
                 args = parts[1:]
                 
                 if cmd_name == "/reset":
-                    from agent.prompts import SYSTEM_PROMPT
-                    state.reset(SYSTEM_PROMPT)
+                    from agent.prompts import build_system_prompt
+                    research_root = cfg.wiki_path / "AINotes" / "Research"
+                    prompt = build_system_prompt(
+                        include_tools=True,
+                        include_syntax=True,
+                        research_root=research_root,
+                    )
+                    state.reset(prompt)
                     console.print("[green]Conversation reset.[/green]")
                     continue
 
