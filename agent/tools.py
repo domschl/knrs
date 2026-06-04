@@ -1524,6 +1524,7 @@ class AgentTools:
                 capture_output=True,
                 text=True,
                 timeout=60,
+                cwd=str(self.config.wiki_path),
             )
             stdout = res.stdout
             stderr = res.stderr

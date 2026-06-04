@@ -91,14 +91,7 @@ class ResearchAgent:
             self.state = state
         else:
             self.state = ConversationState()
-            research_root = config.wiki_path / "AINotes" / "Research"
-            from agent.prompts import build_system_prompt
-            prompt = build_system_prompt(
-                include_tools=True,
-                include_syntax=True,
-                research_root=research_root,
-            )
-            self.state.history.append({"role": "system", "content": prompt})
+            self.state.history.append({"role": "system", "content": SYSTEM_PROMPT})
 
     # ── tool-call extraction (unchanged) ─────────────────────────────
 

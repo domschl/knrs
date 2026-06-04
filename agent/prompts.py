@@ -47,7 +47,8 @@ If your Python scripts or research workflow generates files:
 - All execution must be HEADLESS (do not try to display interactive plots/GUIs; save them directly to files).
 - If images are created (e.g. charts/plots), save them to an `Images` subdirectory relative to the resulting markdown file.
 - If other data files are created, save them to a `Resources` subdirectory relative to the resulting markdown file.
-- All such files must live within the `AINotes/Research/` tree so they are indexed and packaged correctly.\
+- All such files must live within the `AINotes/Research/` tree so they are indexed and packaged correctly.
+- Note: The working directory of the Python environment (`python_eval`) is set to the wiki root, so you can write to relative paths starting with `AINotes/Research/` directly.\
 """
 
 SOURCE_PRIORITY = """\
@@ -144,7 +145,6 @@ def build_system_prompt(
     include_tools: bool = True,
     include_syntax: bool = True,
     active_tool_names: list[str] | None = None,
-    research_root: Path | None = None,
 ) -> str:
     """Assemble the full system prompt from composable sections.
 
@@ -156,22 +156,13 @@ def build_system_prompt(
             relevant when ``include_tools`` is True (raw-LLM backends).
         active_tool_names: Optional allowlist of tool names passed through
             to ``get_tool_prompt_section()``.
-        research_root: Optional absolute Path to AINotes/Research. If provided,
-            inserts the actual local path into the layout prompt.
 
     Returns:
         The assembled system prompt string.
     """
-    layout_str = KNOWLEDGE_BASE_LAYOUT
-    if research_root:
-        layout_str += (
-            f"\n\nNOTE: The actual resolved absolute path for `AINotes/Research/` on the local file system is: `{research_root}`. "
-            f"When writing code for the Python eval tool (`python_eval`), use this absolute path to save files, images, or resources so they land in the correct location."
-        )
-
     sections: list[str] = [
         IDENTITY,
-        layout_str,
+        KNOWLEDGE_BASE_LAYOUT,
         SOURCE_PRIORITY,
     ]
 
