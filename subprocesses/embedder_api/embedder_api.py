@@ -16,7 +16,7 @@ from rich.logging import RichHandler
 from rich.console import Console
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO if os.environ.get("KNRS_VERBOSE") == "1" else logging.WARNING,
     format="%(message)s",
     datefmt="[%X]",
     handlers=[

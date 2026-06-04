@@ -4,6 +4,26 @@
 
 from __future__ import annotations
 
+import os
+
+# Silence verbose progress bar output from huggingface and tqdm
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_SYSPROGRESS"] = "1"
+os.environ["TQDM_DISABLE"] = "1"
+
+# Also programmatically disable them to be extra safe
+try:
+    import tqdm
+    from functools import partialmethod
+    tqdm.tqdm.__init__ = partialmethod(tqdm.tqdm.__init__, disable=True)
+except Exception:
+    pass
+
+try:
+    from huggingface_hub.utils import disable_progress_bars
+    disable_progress_bars()
+except Exception:
+    pass
 
 import json
 import re
@@ -18,7 +38,7 @@ from rich.logging import RichHandler
 from rich.console import Console
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO if os.environ.get("KNRS_VERBOSE") == "1" else logging.WARNING,
     format="%(message)s",
     datefmt="[%X]",
     handlers=[

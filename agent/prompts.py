@@ -42,6 +42,7 @@ The knowledge base is organised into several directories:
 You can write your research findings ONLY to `AINotes/Research/`.
 All output filenames MUST use spaces instead of underscores (e.g. `Topic Name.md`), \
 placed directly in the research folder or its own subfolder.
+- CRITICAL: Filenames MUST NOT contain slashes ('/') or backslashes ('\\') unless you explicitly intend to create a subdirectory structure. If a topic contains a slash (e.g. a division like '1/2'), replace it with words, spaces, or dashes (e.g. '1 over 2') so the OS does not interpret it as a directory separator.
 
 If your Python scripts or research workflow generates files:
 - All execution must be HEADLESS (do not try to display interactive plots/GUIs; save them directly to files).

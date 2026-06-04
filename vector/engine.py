@@ -78,14 +78,25 @@ def get_embeddings(texts: list[str], config: KnrsConfig, encode_mode: str = "que
         with input_json.open("w", encoding="utf-8") as f:
             json.dump(texts, f)
 
-        logger.info("Running embedder %s (mode=%s) for %d texts...", embedder_name, encode_mode, len(texts))
+        logger.debug("Running embedder %s (mode=%s) for %d texts...", embedder_name, encode_mode, len(texts))
+        import os
+        env = os.environ.copy()
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            env["KNRS_VERBOSE"] = "1"
         try:
             subprocess.run(
                 [python_exe, str(script), "--mode", encode_mode, str(input_json), str(output_npy)],
+                capture_output=True,
+                text=True,
+                env=env,
                 check=True,
             )
         except subprocess.CalledProcessError as e:
             logger.error("Embedder failed with exit code %d", e.returncode)
+            if e.stdout:
+                logger.error("Embedder stdout:\n%s", e.stdout)
+            if e.stderr:
+                logger.error("Embedder stderr:\n%s", e.stderr)
             raise RuntimeError(
                 f"Embedder subprocess failed with exit code {e.returncode}"
             ) from e
@@ -126,26 +137,40 @@ class EmbedderSession:
             raise FileNotFoundError(f"Embedder script not found: {script}")
         python_exe = _embedder_python(script)
 
-        logger.info(
+        logger.debug(
             "Launching persistent embedder '%s' (model will load once)…",
             embedder_name,
         )
+        import os
+        env = os.environ.copy()
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            env["KNRS_VERBOSE"] = "1"
         self._proc = subprocess.Popen(
             [python_exe, str(script), "--server"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             bufsize=1,          # line-buffered text mode
+            env=env,
         )
 
         # Block until the subprocess has finished loading the model.
         ready_line = self._proc.stdout.readline().strip()  # type: ignore[union-attr]
         if ready_line != "READY":
+            stderr_content = ""
+            if self._proc.stderr:
+                try:
+                    import select
+                    if select.select([self._proc.stderr], [], [], 2.0)[0]:
+                        stderr_content = self._proc.stderr.read()
+                except Exception:
+                    pass
             self._proc.kill()
             raise RuntimeError(
-                f"Embedder subprocess did not send READY; got: {ready_line!r}"
+                f"Embedder subprocess did not send READY; got: {ready_line!r}\nStderr:\n{stderr_content}"
             )
-        logger.info("Embedder model loaded and ready.")
+        logger.debug("Embedder model loaded and ready.")
 
         self._tmp = tempfile.TemporaryDirectory()
         tmp = Path(self._tmp.name)

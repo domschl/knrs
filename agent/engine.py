@@ -75,12 +75,17 @@ class AgentSession:
             "Launching persistent agent backend '%s'…",
             agent_name,
         )
+        import os
+        env = os.environ.copy()
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            env["KNRS_VERBOSE"] = "1"
         self._proc = subprocess.Popen(
             [python_exe, str(script)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
             bufsize=1,          # line-buffered text mode
+            env=env,
         )
 
         # Block until the subprocess has finished loading the model.

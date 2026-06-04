@@ -80,9 +80,14 @@ def summarize_file(
     python_exe = _summarizer_python(script)
 
     logger.info("Summarising: %s", source_md.name)
+    import os
+    env = os.environ.copy()
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        env["KNRS_VERBOSE"] = "1"
     try:
         p = subprocess.Popen(
-            [python_exe, str(script), str(source_md), str(target_path), "--summary_max_tokens", str(summary_max_tokens)]
+            [python_exe, str(script), str(source_md), str(target_path), "--summary_max_tokens", str(summary_max_tokens)],
+            env=env
         )
         try:
             p.wait()
@@ -142,9 +147,14 @@ def answer_query(
     python_exe = _summarizer_python(script)
 
     logger.info("Answering query: %s", query)
+    import os
+    env = os.environ.copy()
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        env["KNRS_VERBOSE"] = "1"
     try:
         p = subprocess.Popen(
-            [python_exe, str(script), str(source_md), str(target_path), "--query", query, "--summary_max_tokens", str(summary_max_tokens)]
+            [python_exe, str(script), str(source_md), str(target_path), "--query", query, "--summary_max_tokens", str(summary_max_tokens)],
+            env=env
         )
         try:
             p.wait()
