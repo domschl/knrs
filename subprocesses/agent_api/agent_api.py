@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import signal
+import os
 import sys
 import logging
 import threading
@@ -36,16 +37,23 @@ logger = logging.getLogger("agent_api")
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 from agent_core.protocol import read_request, write_response, write_error
-from summarizer_core.utils import get_platform_config, get_llm_server_config, watchdog, validate_config
+from summarizer_core.utils import (
+    get_platform_config,
+    get_llm_server_config,
+    watchdog,
+    validate_config,
+)
 
 # ── Config schema ──────────────────────────────────────────────────────────────
 
 CONFIG_FILE = "agent_config_api.json"
 
+
 class AgentApiConfig(TypedDict):
     model_name: str
     default_max_tokens: int
     default_temperature: float
+
 
 CONFIG_SCHEMA: dict[str, str] = {
     "model_name": "str",
@@ -64,7 +72,6 @@ from agent_core.tool_registry import get_json_schemas as _get_json_schemas
 # Tool schemas are generated at import time from the canonical registry.
 # Do not edit this list — edit tool_registry.py instead.
 tools = _get_json_schemas()
-
 
 
 class ApiAgentEngine:
@@ -110,10 +117,10 @@ class ApiAgentEngine:
             )
             response.raise_for_status()
             data = response.json()
-            
+
             message = data["choices"][0]["message"]
             content = message.get("content") or ""
-            
+
             tool_calls = message.get("tool_calls")
             if tool_calls:
                 # Format native tool calls into our existing JSON format!
@@ -126,19 +133,16 @@ class ApiAgentEngine:
                         args = json.loads(args_str)
                     except Exception:
                         args = args_str
-                    
-                    tool_json = {
-                        "tool": name,
-                        "args": args
-                    }
+
+                    tool_json = {"tool": name, "args": args}
                     tool_lines.append(json.dumps(tool_json, indent=2))
-                
+
                 # Combine content and tool calls
                 if content:
                     content += "\n\n" + "\n\n".join(tool_lines)
                 else:
                     content = "\n\n".join(tool_lines)
-                    
+
             return content.strip()
         except requests.HTTPError as e:
             logger.error(f"API request failed: {e}")
@@ -183,8 +187,12 @@ def main() -> None:
 
     import argparse
 
-    parser = argparse.ArgumentParser(description="Agent backend using OpenAI-compatible API")
-    parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
+    parser = argparse.ArgumentParser(
+        description="Agent backend using OpenAI-compatible API"
+    )
+    parser.add_argument(
+        "--capabilities", action="store_true", help="Print backend capabilities as JSON"
+    )
     args = parser.parse_args()
 
     server_config = get_llm_server_config()
@@ -216,8 +224,8 @@ def main() -> None:
             "validated_models": [DEFAULT_LOCAL_CONFIG["model_name"]],
             "available_models": available_models,
             "parameters": {
-                "model_name":          {"type": "str"},
-                "default_max_tokens":  {"type": "int",   "min": 100, "max": 128000},
+                "model_name": {"type": "str"},
+                "default_max_tokens": {"type": "int", "min": 100, "max": 128000},
                 "default_temperature": {"type": "float", "min": 0.0, "max": 2.0},
             },
         }
