@@ -841,7 +841,10 @@ class AgentTools:
         """Search arXiv for academic papers."""
         import urllib.request
         import urllib.parse
+        import urllib.error
         import xml.etree.ElementTree as ET
+        import time
+        import json
 
         try:
             max_results = max(1, min(int(max_results), 10))
@@ -855,25 +858,118 @@ class AgentTools:
             "sortBy": "relevance",
             "sortOrder": "descending",
         })
-        url = f"http://export.arxiv.org/api/query?{params}"
-        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
+        url = f"https://export.arxiv.org/api/query?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 (contact: research@agent.local; AI assistant)"})
+        
+        xml_data: str | None = None
+        last_error: Exception | None = None
+        
+        # Retry loop for rate limits / timeouts
+        for attempt in range(3):
+            if attempt > 0:
+                sleep_time = 3 * attempt
+                logger.info(f"Retrying arXiv API request in {sleep_time} seconds (attempt {attempt + 1}/3)...")
+                time.sleep(sleep_time)
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    xml_data = resp.read().decode("utf-8")
+                break
+            except urllib.error.HTTPError as e:
+                last_error = e
+                if e.code == 429:
+                    logger.warning(f"arXiv API rate limit hit (429) on search: {e}")
+                else:
+                    logger.warning(f"arXiv API HTTP error {e.code} on search: {e}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"arXiv API request failed on search: {e}")
+
+        if xml_data is not None:
+            try:
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                root = ET.fromstring(xml_data)
+                entries = root.findall("atom:entry", ns)
+                if not entries:
+                    return f"No arXiv papers found for '{query}'."
+                lines: list[str] = [f"arXiv search results for '{query}':"]
+                for e in entries:
+                    raw_id = e.findtext("atom:id", "", ns)
+                    arxiv_id = raw_id.split("/abs/")[-1] if "/abs/" in raw_id else raw_id
+                    title = e.findtext("atom:title", "", ns).strip().replace("\n", " ")
+                    authors = [a.findtext("atom:name", "", ns) for a in e.findall("atom:author", ns)]
+                    author_str = ", ".join(authors[:3]) + ("..." if len(authors) > 3 else "")
+                    pub = (e.findtext("atom:published", "", ns) or "")[:10]
+                    abstract = e.findtext("atom:summary", "", ns).strip().replace("\n", " ")[:200]
+                    lines.append(
+                        f"\n- {title}\n"
+                        f"  ID: {arxiv_id} | Published: {pub}\n"
+                        f"  Authors: {author_str}\n"
+                        f"  Abstract: {abstract}..."
+                    )
+                return "\n".join(lines)
+            except Exception as e:
+                logger.warning(f"Failed to parse arXiv XML response: {e}. Falling back to OpenAlex.")
+
+        # Fallback to OpenAlex
+        logger.info(f"Falling back to OpenAlex for search query: '{query}'")
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                xml_data = resp.read().decode("utf-8")
-            ns = {"atom": "http://www.w3.org/2005/Atom"}
-            root = ET.fromstring(xml_data)
-            entries = root.findall("atom:entry", ns)
-            if not entries:
-                return f"No arXiv papers found for '{query}'."
-            lines = [f"arXiv search results for '{query}':"]
-            for e in entries:
-                raw_id = e.findtext("atom:id", "", ns)
-                arxiv_id = raw_id.split("/abs/")[-1] if "/abs/" in raw_id else raw_id
-                title = e.findtext("atom:title", "", ns).strip().replace("\n", " ")
-                authors = [a.findtext("atom:name", "", ns) for a in e.findall("atom:author", ns)]
+            oa_params = urllib.parse.urlencode({
+                "search": query,
+                "filter": "locations.source.id:https://openalex.org/S4306400194",
+                "per-page": max_results,
+                "select": "id,title,authorships,publication_year,publication_date,doi,locations,abstract_inverted_index",
+                "mailto": "knrs@research.agent",
+            })
+            oa_url = f"https://api.openalex.org/works?{oa_params}"
+            oa_req = urllib.request.Request(oa_url, headers={"User-Agent": "knrs/0.1.0 (contact: research@agent.local; AI assistant)"})
+            with urllib.request.urlopen(oa_req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            
+            works = data.get("results", [])
+            if not works:
+                return f"No arXiv papers found for '{query}' (via OpenAlex)."
+            
+            lines = [f"arXiv search results for '{query}' (via OpenAlex fallback):"]
+            for work in works:
+                title = work.get("title") or "Unknown title"
+                pub = work.get("publication_date") or str(work.get("publication_year") or "")
+                
+                authors = [
+                    a["author"]["display_name"]
+                    for a in work.get("authorships", [])
+                    if a.get("author")
+                ]
                 author_str = ", ".join(authors[:3]) + ("..." if len(authors) > 3 else "")
-                pub = (e.findtext("atom:published", "", ns) or "")[:10]
-                abstract = e.findtext("atom:summary", "", ns).strip().replace("\n", " ")[:200]
+                
+                arxiv_id = None
+                for loc in work.get("locations", []):
+                    lp = loc.get("landing_page_url") or ""
+                    if "arxiv.org/abs/" in lp:
+                        arxiv_id = lp.split("arxiv.org/abs/")[-1].split("v")[0]
+                        break
+                    elif "arxiv.org/pdf/" in lp:
+                        arxiv_id = lp.split("arxiv.org/pdf/")[-1].replace(".pdf", "").split("v")[0]
+                        break
+                doi = work.get("doi") or ""
+                if not arxiv_id and "10.48550/arxiv." in doi.lower():
+                    arxiv_id = doi.lower().split("10.48550/arxiv.")[-1]
+                if not arxiv_id:
+                    arxiv_id = work.get("id", "").split("/")[-1]
+                
+                abstract = ""
+                aii = work.get("abstract_inverted_index")
+                if aii:
+                    try:
+                        max_pos = max(pos for positions in aii.values() for pos in positions)
+                        words: list[str] = [""] * (max_pos + 1)
+                        for word, positions in aii.items():
+                            for pos in positions:
+                                if pos <= max_pos:
+                                    words[pos] = word
+                        abstract = " ".join(words).replace("\n", " ")[:200]
+                    except Exception:
+                        pass
+                
                 lines.append(
                     f"\n- {title}\n"
                     f"  ID: {arxiv_id} | Published: {pub}\n"
@@ -882,12 +978,16 @@ class AgentTools:
                 )
             return "\n".join(lines)
         except Exception as e:
-            return f"Error searching arXiv: {e}"
+            return f"Error searching arXiv: {last_error or e} (OpenAlex fallback error: {e})"
 
     def arxiv_fetch(self, arxiv_id: str) -> str:
         """Download an arXiv paper abstract and metadata by ID."""
         import urllib.request
+        import urllib.parse
+        import urllib.error
         import xml.etree.ElementTree as ET
+        import time
+        import json
         from calibre.converter import atomic_write
 
         arxiv_id = arxiv_id.strip()
@@ -904,26 +1004,140 @@ class AgentTools:
                 f"Use file_read to read the full entry."
             )
 
-        url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
-        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                xml_data = resp.read().decode("utf-8")
-            ns = {"atom": "http://www.w3.org/2005/Atom"}
-            root = ET.fromstring(xml_data)
-            entry = root.find("atom:entry", ns)
-            if entry is None:
-                return f"Error: arXiv paper '{arxiv_id}' not found."
+        url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 (contact: research@agent.local; AI assistant)"})
+        
+        xml_data: str | None = None
+        last_error: Exception | None = None
+        
+        # Retry loop for rate limits / timeouts
+        for attempt in range(3):
+            if attempt > 0:
+                sleep_time = 3 * attempt
+                logger.info(f"Retrying arXiv API request in {sleep_time} seconds (attempt {attempt + 1}/3)...")
+                time.sleep(sleep_time)
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    xml_data = resp.read().decode("utf-8")
+                break
+            except urllib.error.HTTPError as e:
+                last_error = e
+                if e.code == 429:
+                    logger.warning(f"arXiv API rate limit hit (429) on fetch: {e}")
+                else:
+                    logger.warning(f"arXiv API HTTP error {e.code} on fetch: {e}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"arXiv API request failed on fetch: {e}")
 
-            title = entry.findtext("atom:title", "", ns).strip().replace("\n", " ")
-            authors = [a.findtext("atom:name", "", ns) for a in entry.findall("atom:author", ns)]
-            abstract = entry.findtext("atom:summary", "", ns).strip()
-            pub = (entry.findtext("atom:published", "", ns) or "")[:10]
-            links = [
-                f"{lk.get('title', lk.get('type', ''))}: {lk.get('href')}"
-                for lk in entry.findall("atom:link", ns)
-                if lk.get("type") in ("text/html", "application/pdf")
+        if xml_data is not None:
+            try:
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                root = ET.fromstring(xml_data)
+                entry = root.find("atom:entry", ns)
+                if entry is not None:
+                    title = entry.findtext("atom:title", "", ns).strip().replace("\n", " ")
+                    authors = [a.findtext("atom:name", "", ns) for a in entry.findall("atom:author", ns)]
+                    abstract = entry.findtext("atom:summary", "", ns).strip()
+                    pub = (entry.findtext("atom:published", "", ns) or "")[:10]
+                    links = [
+                        f"{lk.get('title', lk.get('type', ''))}: {lk.get('href')}"
+                        for lk in entry.findall("atom:link", ns)
+                        if lk.get("type") in ("text/html", "application/pdf")
+                    ]
+
+                    md = (
+                        f'---\ntitle: "{title} (arXiv:{arxiv_id})"\n'
+                        f'source: "arXiv"\nsource_url: "https://arxiv.org/abs/{arxiv_id}"\n'
+                        f'published: "{pub}"\n---\n\n# {title}\n\n'
+                        f'**Authors:** {", ".join(authors)}\n'
+                        f'**Published:** {pub}\n**arXiv ID:** {arxiv_id}\n\n'
+                        f'## Abstract\n\n{abstract}\n\n'
+                        f'## Links\n\n' + "\n".join(f"- {l}" for l in links)
+                    )
+                    arxiv_dir.mkdir(parents=True, exist_ok=True)
+                    atomic_write(file_path, md)
+                    rel = file_path.relative_to(self.config.wiki_path)
+                    preview = abstract[:500].strip()
+                    return (
+                        f"Downloaded arXiv paper '{title}' to {rel}\n\nPreview:\n{preview}...\n\n"
+                        f"Use file_read to read the full entry."
+                    )
+                else:
+                    logger.warning(f"arXiv ID '{arxiv_id}' not found in XML response. Falling back to OpenAlex.")
+            except Exception as e:
+                logger.warning(f"Failed to parse arXiv XML response for fetch: {e}. Falling back to OpenAlex.")
+
+        # Fallback to OpenAlex
+        logger.info(f"Falling back to OpenAlex for fetch arXiv ID: '{arxiv_id}'")
+        try:
+            work: dict | None = None
+            for proto in ["http", "https"]:
+                landing_url = f"{proto}://arxiv.org/abs/{arxiv_id}"
+                oa_params = urllib.parse.urlencode({
+                    "filter": f"locations.landing_page_url:{landing_url}",
+                    "mailto": "knrs@research.agent",
+                })
+                oa_url = f"https://api.openalex.org/works?{oa_params}"
+                oa_req = urllib.request.Request(oa_url, headers={"User-Agent": "knrs/0.1.0 (contact: research@agent.local; AI assistant)"})
+                try:
+                    with urllib.request.urlopen(oa_req, timeout=10) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if data.get("results"):
+                            work = data["results"][0]
+                            break
+                except Exception as e:
+                    logger.warning(f"OpenAlex lookup with landing page {landing_url} failed: {e}")
+            
+            if not work:
+                oa_params = urllib.parse.urlencode({
+                    "search": arxiv_id,
+                    "mailto": "knrs@research.agent",
+                })
+                oa_url = f"https://api.openalex.org/works?{oa_params}"
+                oa_req = urllib.request.Request(oa_url, headers={"User-Agent": "knrs/0.1.0 (contact: research@agent.local; AI assistant)"})
+                with urllib.request.urlopen(oa_req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if data.get("results"):
+                        work = data["results"][0]
+            
+            if not work:
+                return f"Error: arXiv paper '{arxiv_id}' not found (via OpenAlex fallback)."
+
+            title = work.get("title") or "Unknown title"
+            pub = work.get("publication_date") or str(work.get("publication_year") or "")
+            if pub:
+                pub = pub[:10]
+            
+            authors = [
+                a["author"]["display_name"]
+                for a in work.get("authorships", [])
+                if a.get("author")
             ]
+            
+            abstract = ""
+            aii = work.get("abstract_inverted_index")
+            if aii:
+                try:
+                    max_pos = max(pos for positions in aii.values() for pos in positions)
+                    words: list[str] = [""] * (max_pos + 1)
+                    for word, positions in aii.items():
+                        for pos in positions:
+                            if pos <= max_pos:
+                                words[pos] = word
+                    abstract = " ".join(words)
+                except Exception:
+                    pass
+            
+            links: list[str] = []
+            for loc in work.get("locations", []):
+                landing = loc.get("landing_page_url")
+                pdf = loc.get("pdf_url")
+                if landing:
+                    links.append(f"Landing: {landing}")
+                if pdf:
+                    links.append(f"PDF: {pdf}")
+            links = list(dict.fromkeys(links))
 
             md = (
                 f'---\ntitle: "{title} (arXiv:{arxiv_id})"\n'
@@ -934,16 +1148,17 @@ class AgentTools:
                 f'## Abstract\n\n{abstract}\n\n'
                 f'## Links\n\n' + "\n".join(f"- {l}" for l in links)
             )
+            
             arxiv_dir.mkdir(parents=True, exist_ok=True)
             atomic_write(file_path, md)
             rel = file_path.relative_to(self.config.wiki_path)
             preview = abstract[:500].strip()
             return (
-                f"Downloaded arXiv paper '{title}' to {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Downloaded arXiv paper '{title}' to {rel} (via OpenAlex fallback)\n\nPreview:\n{preview}...\n\n"
                 f"Use file_read to read the full entry."
             )
         except Exception as e:
-            return f"Error fetching arXiv paper '{arxiv_id}': {e}"
+            return f"Error fetching arXiv paper '{arxiv_id}': {last_error or e} (OpenAlex fallback error: {e})"
 
     # ── OpenAlex ──────────────────────────────────────────────────────────────
 
@@ -1258,74 +1473,81 @@ class AgentTools:
     # ── Computational tools ───────────────────────────────────────────────────
 
     def python_eval(self, code: str) -> str:
-        """Execute a sandboxed Python snippet via RestrictedPython."""
-        import io
-        import math
-        import statistics
+        """Execute a Python snippet in a dedicated, isolated virtual environment."""
+        if not getattr(self.config, "enable_python_eval", True):
+            return "Error: The python_eval tool is disabled in knrs.json."
+
+        import os
+        import sys
+        import shutil
+        import subprocess
+        import tempfile
+
+        venv_dir = self.config.knrs_data / "eval_venv"
+        if sys.platform == "win32":
+            python_exe = venv_dir / "Scripts" / "python.exe"
+        else:
+            python_exe = venv_dir / "bin" / "python"
+
+        # Initialize dedicated venv if it doesn't exist
+        if not python_exe.exists():
+            logger.info(f"Initializing dedicated Python evaluation venv at {venv_dir}...")
+            try:
+                venv_dir.mkdir(parents=True, exist_ok=True)
+                if shutil.which("uv"):
+                    subprocess.run(["uv", "venv", str(venv_dir)], check=True, capture_output=True)
+                    subprocess.run(
+                        ["uv", "pip", "install", "--python", str(python_exe), "numpy", "matplotlib", "sympy", "pandas", "scipy"],
+                        check=True,
+                        capture_output=True,
+                    )
+                else:
+                    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, capture_output=True)
+                    subprocess.run(
+                        [str(python_exe), "-m", "pip", "install", "numpy", "matplotlib", "sympy", "pandas", "scipy"],
+                        check=True,
+                        capture_output=True,
+                    )
+                logger.info("Evaluation venv initialized successfully with scientific package stack.")
+            except Exception as e:
+                logger.error(f"Failed to initialize evaluation venv: {e}")
+                return f"Error: Failed to initialize evaluation venv: {e}"
+
+        # Write the code to a temporary file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+            f.write(code)
+            temp_path = f.name
 
         try:
-            from RestrictedPython import (
-                compile_restricted,
-                safe_globals,
-                safe_builtins,
-                PrintCollector,
+            res = subprocess.run(
+                [str(python_exe), temp_path],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-            from RestrictedPython.Guards import safer_getattr, guarded_unpack_sequence
-        except ImportError:
-            return "Error: RestrictedPython is not installed. Run: uv add RestrictedPython"
-
-        allowed_builtins: dict[str, object] = {
-            **safe_builtins,
-            "range": range,
-            "len": len,
-            "sum": sum,
-            "min": min,
-            "max": max,
-            "abs": abs,
-            "round": round,
-            "sorted": sorted,
-            "reversed": reversed,
-            "enumerate": enumerate,
-            "zip": zip,
-            "map": map,
-            "filter": filter,
-            "list": list,
-            "dict": dict,
-            "set": set,
-            "tuple": tuple,
-            "str": str,
-            "int": int,
-            "float": float,
-            "bool": bool,
-            "isinstance": isinstance,
-            "type": type,
-            "repr": repr,
-        }
-        globs: dict[str, object] = {
-            **safe_globals,
-            "__builtins__": allowed_builtins,
-            "math": math,
-            "statistics": statistics,
-            "_getattr_": safer_getattr,
-            "_getitem_": lambda obj, key: obj[key],  # default item access
-            "_getiter_": iter,
-            "_write_": lambda x: x,
-            "_inplacevar_": lambda op, x, y: x + y if op == "+=" else x - y,
-            "_print_": PrintCollector,  # RestrictedPython print() guard
-            "_unpack_sequence_": guarded_unpack_sequence,
-        }
-
-        try:
-            byte_code = compile_restricted(code, "<python_eval>", "exec")
-            exec(byte_code, globs)  # noqa: S102
-            # PrintCollector: calling the instance returns collected text
-            printer = globs.get("_print")
-            output = printer() if callable(printer) else ""
-            return output if output.strip() else "(executed — no output produced)"
-        except SyntaxError as e:
-            return f"Syntax error: {e}"
+            stdout = res.stdout
+            stderr = res.stderr
+            code_return = res.returncode
+        except subprocess.TimeoutExpired:
+            return "Error: Python execution timed out after 60 seconds."
         except Exception as e:
-            return f"Runtime error: {e}"
+            return f"Error executing Python subprocess: {e}"
+        finally:
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+
+        result = []
+        if stdout:
+            result.append(stdout)
+        if stderr:
+            result.append(f"Stderr / Traceback:\n{stderr}")
+        if code_return != 0 and not stderr:
+            result.append(f"Process exited with non-zero exit code: {code_return}")
+
+        final_output = "\n".join(result)
+        return final_output if final_output.strip() else "(executed successfully — no output produced on stdout/stderr)"
 
 
 

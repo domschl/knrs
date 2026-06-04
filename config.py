@@ -38,6 +38,7 @@ class KnrsConfig:
     checkpoint_every_chunks: int = 5000
     external_library: Path = field(default_factory=lambda: Path("~/MetaLibrary").expanduser().resolve())
     benchmark_path: Path = field(default_factory=lambda: Path("~/.config/knrs/benchmarks").expanduser().resolve())
+    enable_python_eval: bool = True
 
     # ------------------------------------------------------------------ #
     # Derived path helpers                                                 #
@@ -216,6 +217,10 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(checkpoint_every_chunks, int):
         raise ValueError("Config key 'checkpoint_every_chunks' must be an integer.")
 
+    enable_python_eval = raw.get("enable_python_eval", True)
+    if not isinstance(enable_python_eval, bool):
+        raise ValueError("Config key 'enable_python_eval' must be a boolean.")
+
     cfg = KnrsConfig(
         calibre_path=resolve(raw["calibre_path"]),
         notes_path=resolve(raw["notes_path"]),
@@ -234,6 +239,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         vector_chunk_overlap=vector_chunk_overlap,
         checkpoint_every_docs=checkpoint_every_docs,
         checkpoint_every_chunks=checkpoint_every_chunks,
+        enable_python_eval=enable_python_eval,
     )
 
     logger.debug("Config loaded from %s", path)
@@ -285,6 +291,7 @@ def print_config(cfg: KnrsConfig) -> None:
         ("vector_chunk_overlap", str(cfg.vector_chunk_overlap)),
         ("checkpoint_every_docs", str(cfg.checkpoint_every_docs)),
         ("checkpoint_every_chunks", str(cfg.checkpoint_every_chunks)),
+        ("enable_python_eval", str(cfg.enable_python_eval)),
     ]
     for key, val in rows:
         table.add_row(key, val)

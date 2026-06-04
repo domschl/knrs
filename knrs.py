@@ -107,6 +107,30 @@ def _build_parser() -> argparse.ArgumentParser:
 
     return parser
 
+def check_dependencies() -> None:
+    """Check for external binaries and print warnings if any are missing."""
+    import shutil
+
+    missing_deps: list[tuple[str, str]] = []
+
+    # 1. pandoc
+    if not shutil.which("pandoc"):
+        missing_deps.append(("pandoc", "EPUB book conversion will not be available."))
+
+    # 2. maxima
+    if not shutil.which("maxima"):
+        missing_deps.append(("maxima", "Maxima CAS symbolic math tool (maxima_eval) will not be available."))
+
+    # 3. git
+    if not shutil.which("git"):
+        missing_deps.append(("git", "Git status safety checks and sync automation will not be available."))
+
+    if missing_deps:
+        print("Warning: Missing external dependencies:", file=sys.stderr)
+        for dep, impact in missing_deps:
+            print(f"  - '{dep}' is not installed or not in PATH. {impact}", file=sys.stderr)
+        print("", file=sys.stderr)
+
 
 def main() -> None:
     # 1. Pre-parse global options so we can handle slash commands one-shot
@@ -145,6 +169,8 @@ def main() -> None:
                     print(f"Error loading config: {e}", file=sys.stderr)
                     sys.exit(1)
 
+                check_dependencies()
+
                 from repl.commands import init_git_state
                 init_git_state(cfg)
                 try:
@@ -168,6 +194,8 @@ def main() -> None:
     except Exception as e:
         print(f"Error loading config: {e}", file=sys.stderr)
         sys.exit(1)
+
+    check_dependencies()
 
     if args.command == "config":
         from config import print_config

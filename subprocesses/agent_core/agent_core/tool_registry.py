@@ -448,21 +448,18 @@ TOOL_REGISTRY: list[ToolDef] = [
     ToolDef(
         name="python_eval",
         description=(
-            "Execute a sandboxed Python snippet and return its stdout. "
-            "The modules `math` and `statistics` are pre-injected — use them directly "
-            "(e.g. `math.pi`, `statistics.mean(...)`) WITHOUT import statements. "
-            "Use for numerical computations, unit conversions, statistics, and data transformations. "
-            "NOT suitable for I/O, networking, or file operations."
+            "Execute a Python snippet in the local virtual environment and return its stdout/stderr. "
+            "Full standard library and installed packages are available (use import statements as needed). "
+            "Use for numerical computations, data parsing, unit conversions, statistics, and complex algorithms."
         ),
         params=[
             ToolParam(
                 "code",
                 "string",
-                "Python code to execute. Use print() to produce output. "
-                "Do NOT use import statements; math and statistics are pre-available.",
+                "Python code to execute. Use print() to produce output. Standard import statements are supported.",
             )
         ],
-        example_args={"code": "print(round(math.pi * 5**2, 4))"},
+        example_args={"code": "import math\nprint(round(math.pi * 5**2, 4))"},
         category="compute",
     ),
     ToolDef(
@@ -527,6 +524,21 @@ TOOL_REGISTRY: list[ToolDef] = [
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+def is_python_eval_enabled() -> bool:
+    """Helper to check if python_eval is enabled in the configuration file."""
+    import json
+    from pathlib import Path
+    try:
+        cfg_path = Path("~/.config/knrs/knrs.json").expanduser().resolve()
+        if cfg_path.exists():
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                return cfg.get("enable_python_eval", True)
+    except Exception:
+        pass
+    return True
+
+
 def get_available_tools(active_names: list[str] | None = None) -> list[ToolDef]:
     """Return the filtered list of tools that should be active.
 
@@ -538,8 +550,11 @@ def get_available_tools(active_names: list[str] | None = None) -> list[ToolDef]:
     Binary availability is checked automatically for tools with
     ``requires_binary`` set.
     """
+    python_enabled = is_python_eval_enabled()
     result: list[ToolDef] = []
     for t in TOOL_REGISTRY:
+        if t.name == "python_eval" and not python_enabled:
+            continue
         if active_names is not None and t.name not in active_names:
             continue
         if t.requires_binary and not shutil.which(t.requires_binary):
