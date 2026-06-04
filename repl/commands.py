@@ -98,6 +98,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     table.add_row(r"/sync-wiki \[--force]", "Sync KnrsData to Wiki/AINotes")
     table.add_row(r"/sync-external-lib \[--dry-run]", "Sync Calibre EPUB/PDF to External Library")
     table.add_row(r"/check-wiki \[--dry-run] \[--broken-links-to-italics] \[--force]", "Check and fix Wiki metadata consistency")
+    table.add_row(r"/organize \[--dry-run] \[--force]", "Restructure the Research directory hierarchically using LLM")
     table.add_row(r"/timeline \[--force] \[--from YYYY] \[--to YYYY] \[--context PAT] \[--raw] \[keywords]", "Extract and filter timelines")
     table.add_row(r"/index \[--force]", "Update VectorDB index")
     table.add_row("/config", "Show current configuration")
@@ -157,6 +158,35 @@ def cmd_wiki_check(args: list[str], cfg: KnrsConfig) -> None:
         return
     fix_broken_links = "--broken-links-to-italics" in args
     run_wiki_check(cfg, dry_run=dry_run, fix_broken_links=fix_broken_links)
+
+def cmd_organize(args: list[str], cfg: KnrsConfig) -> None:
+    """Restructure the AINotes/Research/ directory hierarchically by calling LLM classification."""
+    from wiki.organizer import organize_research_directory
+    
+    dry_run = "--dry-run" in args
+    apply = not dry_run
+    force = "--force" in args
+    
+    if apply and not force and not GIT_STATE["wiki_path_safe_local"]:
+        console.print(f"[red]Safety check blocked: {cfg.wiki_path} is a git repo but not up-to-date.[/red]")
+        console.print("[yellow]Use --force to override.[/yellow]")
+        return
+        
+    console.print("[bold blue]Starting LLM-Guided Research Organizer...[/bold blue]")
+    if dry_run:
+        console.print("[yellow]DRY-RUN MODE (No changes will be written)[/yellow]\n")
+    else:
+        console.print("[bold green]APPLYING CHANGES...[/bold green]\n")
+        
+    try:
+        log_lines = organize_research_directory(cfg, dry_run=dry_run)
+        if not log_lines:
+            console.print("[green]No organization changes proposed or executed.[/green]")
+        else:
+            for line in log_lines:
+                console.print(line)
+    except Exception as e:
+        console.print(f"[red]Error organizing research directory: {e}[/red]")
 
 def cmd_timeline(args: list[str], cfg: KnrsConfig) -> None:
     from timelines.extractor import run_extraction
@@ -839,6 +869,7 @@ COMMANDS = {
     "/sync-wiki": cmd_sync_wiki,
     "/sync-external-lib": cmd_sync_external_lib,
     "/check-wiki": cmd_wiki_check,
+    "/organize": cmd_organize,
     "/timeline": cmd_timeline,
     "/index": cmd_index,
     "/search": cmd_search,

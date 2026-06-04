@@ -733,6 +733,25 @@ class AgentTools:
         except Exception as e:
             return f"Error extracting timeline from {path}: {e}"
 
+    def organize_research(self, dry_run: bool = False) -> str:
+        """Restructure the AINotes/Research/ directory hierarchically using LLM classification."""
+        try:
+            from wiki.organizer import organize_research_directory
+            is_dry = False
+            if isinstance(dry_run, bool):
+                is_dry = dry_run
+            elif isinstance(dry_run, str):
+                is_dry = dry_run.lower() in ("true", "1", "yes")
+            elif isinstance(dry_run, (int, float)):
+                is_dry = bool(dry_run)
+                
+            log_lines = organize_research_directory(self.config, dry_run=is_dry)
+            if not log_lines:
+                return "No organization changes proposed or executed."
+            return "\n".join(log_lines)
+        except Exception as e:
+            return f"Error organizing research directory: {e}"
+
     # ── Stanford Encyclopedia of Philosophy ──────────────────────────────────
 
     _SEP_UA = "knrs/0.1.0 AgentBot (research assistant; contact: research@agent.local)"
@@ -1638,6 +1657,8 @@ class AgentTools:
             return self.update_index()
         elif tool_name == "extract_timeline":
             return self.extract_timeline(**args)
+        elif tool_name == "organize_research":
+            return self.organize_research(**args)
         else:
             return f"Error: Unknown tool '{tool_name}'"
 

@@ -506,6 +506,24 @@ TOOL_REGISTRY: list[ToolDef] = [
         category="housekeeping",
     ),
     ToolDef(
+        name="organize_research",
+        description=(
+            "Restructure the AINotes/Research/ directory hierarchically by calling an LLM "
+            "to classify research notes. Call this at the end of a session to clean up."
+        ),
+        params=[
+            ToolParam(
+                "dry_run",
+                "boolean",
+                "If true, only returns what moves would be made without executing them.",
+                required=False,
+                default=False,
+            )
+        ],
+        example_args={"dry_run": False},
+        category="housekeeping",
+    ),
+    ToolDef(
         name="extract_timeline",
         description=(
             "Extract timeline tables from a research file and merge into the "

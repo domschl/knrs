@@ -89,25 +89,13 @@ def run_repl(cfg: KnrsConfig):
     from repl.commands import init_git_state
     init_git_state(cfg)
     
-    # ── Start persistent agent session ─────────────────────────────
+    # ── Start persistent agent session (lazy-initialized on first turn) ────
     from agent.engine import AgentSession
     from agent.agent import ResearchAgent
     from agent.context import ConversationState
 
-    console.print("[dim]Starting agent backend…[/dim]")
-    try:
-        agent_session = AgentSession(cfg)
-        agent_session.__enter__()
-    except (FileNotFoundError, RuntimeError) as e:
-        console.print(f"[bold red]Error: Could not start agent backend: {e}[/bold red]")
-        console.print(
-            "[yellow]Check that the agent backend is installed. "
-            "Use 'uv run knrs config' to see the current agent_backend_name, "
-            "and '/backends' to list available backends.[/yellow]"
-        )
-        return
-
     state = ConversationState()
+    agent_session = AgentSession(cfg)
     agent = ResearchAgent(cfg, agent_session, state)
 
     global _current_agent
@@ -178,6 +166,18 @@ def run_repl(cfg: KnrsConfig):
 
 def _run_agent_turn(agent: ResearchAgent, user_message: str) -> None:
     """Execute one agent turn with live output."""
+    if agent.session._proc is None:
+        console.print("[dim]Starting agent backend…[/dim]")
+        try:
+            agent.session.__enter__()
+        except (FileNotFoundError, RuntimeError) as e:
+            console.print(f"[bold red]Error: Could not start agent backend: {e}[/bold red]")
+            console.print(
+                "[yellow]Check that the agent backend is installed. "
+                "Use 'uv run knrs config' to see the current agent_backend_name, "
+                "and '/backends' to list available backends.[/yellow]"
+            )
+            return
 
     def on_step(step_num: int, msg: str, tool_calls: list) -> None:
         ctx = agent.state.context_size()

@@ -58,6 +58,9 @@ class AgentSession:
     The subprocess is shut down cleanly when the context exits.
     """
 
+    _active_session: AgentSession | None = None
+    _ref_count: int = 0
+
     def __init__(self, config: KnrsConfig) -> None:
         self.config: KnrsConfig = config
         self._proc: subprocess.Popen[str] | None = None
@@ -65,6 +68,24 @@ class AgentSession:
     # ── Context manager ────────────────────────────────────────────────────
 
     def __enter__(self) -> AgentSession:
+        if AgentSession._active_session is not None:
+            active_name = AgentSession._active_session.config.agent_backend_name
+            current_name = self.config.agent_backend_name
+            if active_name != current_name:
+                raise RuntimeError(
+                    f"Cannot start agent backend '{current_name}': "
+                    f"backend '{active_name}' is already running and only "
+                    f"one agent backend can be active at a time."
+                )
+            AgentSession._ref_count += 1
+            self._proc = AgentSession._active_session._proc
+            logger.info(
+                "Reusing active persistent agent backend '%s' (ref_count: %d).",
+                current_name,
+                AgentSession._ref_count,
+            )
+            return self
+
         agent_name = self.config.agent_backend_name
         script = _agent_script(agent_name)
         if not script.exists():
@@ -99,6 +120,8 @@ class AgentSession:
                 f"Agent subprocess did not send READY; got: {ready_line!r}"
             )
         logger.info("Agent backend loaded and ready.")
+        AgentSession._active_session = self
+        AgentSession._ref_count = 1
         return self
 
     def __exit__(
@@ -107,14 +130,33 @@ class AgentSession:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        if self._proc is not None:
-            try:
-                if self._proc.stdin is not None:
-                    self._proc.stdin.close()
-                self._proc.wait(timeout=30)
-            except Exception:
-                self._proc.kill()
+        if self._proc is None:
+            return
+        AgentSession._ref_count -= 1
+        if AgentSession._ref_count > 0:
+            logger.info(
+                "Releasing active persistent agent backend reference (remaining: %d).",
+                AgentSession._ref_count,
+            )
             self._proc = None
+            return
+
+        proc_to_clean = self._proc or (
+            AgentSession._active_session._proc
+            if AgentSession._active_session
+            else None
+        )
+        AgentSession._active_session = None
+        AgentSession._ref_count = 0
+        self._proc = None
+
+        if proc_to_clean is not None:
+            try:
+                if proc_to_clean.stdin is not None:
+                    proc_to_clean.stdin.close()
+                proc_to_clean.wait(timeout=30)
+            except Exception:
+                proc_to_clean.kill()
 
     # ── Generation ─────────────────────────────────────────────────────────
 
