@@ -10,6 +10,7 @@ dependencies = [
     "pillow>=10.0.0",
     "numpy>=2.0.0",
     "beautifulsoup4>=4.14.3",
+    "restrictedpython>=7.0",
 ]
 
 [project.scripts]

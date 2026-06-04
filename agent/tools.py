@@ -1,13 +1,7 @@
-# =========================================================================
-# DEVELOPER WARNING: SINGLE SOURCE OF TRUTH (SST) FOR AGENT TOOLS
-#
-# If you add, modify, or remove any agent tools, you MUST update:
-# 1. agent/tools.py (The dynamic dispatch & implementation)
-# 2. agent/prompts.py (The text-based instructions for raw LLMs)
-# 3. subprocesses/agent_api/agent_api.py (The JSON schema array)
-# 4. subprocesses/agent_macos/agent_macos.py (The JSON schema array)
-# 5. subprocesses/agent_hf/agent_hf.py (The JSON schema array)
-# =========================================================================
+# To add or modify a tool, edit:
+#   1. subprocesses/agent_core/agent_core/tool_registry.py  (definition, schema, prompt text)
+#   2. This file — AgentTools implementation + dispatch()
+
 
 from __future__ import annotations
 
@@ -739,6 +733,635 @@ class AgentTools:
         except Exception as e:
             return f"Error extracting timeline from {path}: {e}"
 
+    # ── Stanford Encyclopedia of Philosophy ──────────────────────────────────
+
+    _SEP_UA = "knrs/0.1.0 AgentBot (research assistant; contact: research@agent.local)"
+
+    def sep_search(self, query: str) -> str:
+        """Search the Stanford Encyclopedia of Philosophy."""
+        import urllib.request
+        import urllib.parse
+        from bs4 import BeautifulSoup
+
+        params = urllib.parse.urlencode({"query": query})
+        url = f"https://plato.stanford.edu/search/search?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": self._SEP_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+            soup = BeautifulSoup(html, "html.parser")
+            results: list[str] = []
+            seen: set[str] = set()
+            for a in soup.find_all("a", href=True):
+                href: str = a["href"]
+                if "/entries/" in href:
+                    # Normalise href to extract the slug
+                    slug = href.split("/entries/")[-1].strip("/")
+                    if not slug or slug in seen:
+                        continue
+                    seen.add(slug)
+                    title = a.get_text(strip=True) or slug
+                    results.append(f"- {title}  (slug: `{slug}`)")
+            if not results:
+                return (
+                    f"No SEP results for '{query}'. "
+                    "Try sep_fetch with a known slug, e.g. sep_fetch(entry='plato')."
+                )
+            return f"SEP search results for '{query}':\n" + "\n".join(results[:15])
+        except Exception as e:
+            return f"Error searching SEP: {e}"
+
+    def sep_fetch(self, entry: str) -> str:
+        """Download a Stanford Encyclopedia of Philosophy article by slug."""
+        import re
+        import urllib.request
+        from bs4 import BeautifulSoup
+        from calibre.converter import atomic_write
+
+        entry = entry.strip().strip("/")
+        url = f"https://plato.stanford.edu/entries/{entry}/"
+        req = urllib.request.Request(url, headers={"User-Agent": self._SEP_UA})
+
+        # Cache path
+        sep_dir = self.research_root / "SEP"
+        safe_name = re.sub(r"[^\w\s-]", "_", entry)
+        file_path = sep_dir / f"{safe_name} (SEP).md"
+
+        if file_path.exists():
+            text = file_path.read_text(encoding="utf-8")
+            preview = text[text.find("\n\n") + 2:][:500].strip()
+            rel = file_path.relative_to(self.config.wiki_path)
+            return (
+                f"Loaded cached SEP article '{entry}' from {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Use file_read to read the full article."
+            )
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+            soup = BeautifulSoup(html, "html.parser")
+
+            title_el = soup.find("h1")
+            title = title_el.get_text(strip=True) if title_el else entry.title()
+
+            # Remove navigation, bibliography, related-entries sidebars
+            for tag in soup.select("nav, header, footer, script, style, "
+                                   "#bibliography, #other-internet-resources, "
+                                   "#related-entries, #toc, .toc"):
+                tag.decompose()
+
+            main = (
+                soup.find("div", id="main-text")
+                or soup.find("div", id="article-content")
+                or soup.find("article")
+                or soup
+            )
+            text = main.get_text(separator="\n", strip=True)
+            text = re.sub(r"\n{3,}", "\n\n", text)
+
+            sep_dir.mkdir(parents=True, exist_ok=True)
+            md = (
+                f'---\ntitle: "{title} (SEP)"\n'
+                f'source: "Stanford Encyclopedia of Philosophy"\n'
+                f'source_url: "{url}"\n---\n\n# {title}\n\n{text}'
+            )
+            atomic_write(file_path, md)
+            rel = file_path.relative_to(self.config.wiki_path)
+            preview = text[:500].strip()
+            return (
+                f"Downloaded SEP article '{title}' to {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Use file_read to read the full article."
+            )
+        except Exception as e:
+            return f"Error fetching SEP entry '{entry}': {e}"
+
+    # ── arXiv ─────────────────────────────────────────────────────────────────
+
+    def arxiv_search(self, query: str, max_results: int = 5) -> str:
+        """Search arXiv for academic papers."""
+        import urllib.request
+        import urllib.parse
+        import xml.etree.ElementTree as ET
+
+        try:
+            max_results = max(1, min(int(max_results), 10))
+        except Exception:
+            max_results = 5
+
+        params = urllib.parse.urlencode({
+            "search_query": f"all:{query}",
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "relevance",
+            "sortOrder": "descending",
+        })
+        url = f"http://export.arxiv.org/api/query?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                xml_data = resp.read().decode("utf-8")
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            root = ET.fromstring(xml_data)
+            entries = root.findall("atom:entry", ns)
+            if not entries:
+                return f"No arXiv papers found for '{query}'."
+            lines = [f"arXiv search results for '{query}':"]
+            for e in entries:
+                raw_id = e.findtext("atom:id", "", ns)
+                arxiv_id = raw_id.split("/abs/")[-1] if "/abs/" in raw_id else raw_id
+                title = e.findtext("atom:title", "", ns).strip().replace("\n", " ")
+                authors = [a.findtext("atom:name", "", ns) for a in e.findall("atom:author", ns)]
+                author_str = ", ".join(authors[:3]) + ("..." if len(authors) > 3 else "")
+                pub = (e.findtext("atom:published", "", ns) or "")[:10]
+                abstract = e.findtext("atom:summary", "", ns).strip().replace("\n", " ")[:200]
+                lines.append(
+                    f"\n- {title}\n"
+                    f"  ID: {arxiv_id} | Published: {pub}\n"
+                    f"  Authors: {author_str}\n"
+                    f"  Abstract: {abstract}..."
+                )
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error searching arXiv: {e}"
+
+    def arxiv_fetch(self, arxiv_id: str) -> str:
+        """Download an arXiv paper abstract and metadata by ID."""
+        import urllib.request
+        import xml.etree.ElementTree as ET
+        from calibre.converter import atomic_write
+
+        arxiv_id = arxiv_id.strip()
+        cache_id = arxiv_id.replace("/", "_").replace(".", "_")
+        arxiv_dir = self.research_root / "arXiv"
+        file_path = arxiv_dir / f"{cache_id} (arXiv).md"
+
+        if file_path.exists():
+            text = file_path.read_text(encoding="utf-8")
+            preview = text[text.find("\n\n") + 2:][:500].strip()
+            rel = file_path.relative_to(self.config.wiki_path)
+            return (
+                f"Loaded cached arXiv paper '{arxiv_id}' from {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Use file_read to read the full entry."
+            )
+
+        url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                xml_data = resp.read().decode("utf-8")
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            root = ET.fromstring(xml_data)
+            entry = root.find("atom:entry", ns)
+            if entry is None:
+                return f"Error: arXiv paper '{arxiv_id}' not found."
+
+            title = entry.findtext("atom:title", "", ns).strip().replace("\n", " ")
+            authors = [a.findtext("atom:name", "", ns) for a in entry.findall("atom:author", ns)]
+            abstract = entry.findtext("atom:summary", "", ns).strip()
+            pub = (entry.findtext("atom:published", "", ns) or "")[:10]
+            links = [
+                f"{lk.get('title', lk.get('type', ''))}: {lk.get('href')}"
+                for lk in entry.findall("atom:link", ns)
+                if lk.get("type") in ("text/html", "application/pdf")
+            ]
+
+            md = (
+                f'---\ntitle: "{title} (arXiv:{arxiv_id})"\n'
+                f'source: "arXiv"\nsource_url: "https://arxiv.org/abs/{arxiv_id}"\n'
+                f'published: "{pub}"\n---\n\n# {title}\n\n'
+                f'**Authors:** {", ".join(authors)}\n'
+                f'**Published:** {pub}\n**arXiv ID:** {arxiv_id}\n\n'
+                f'## Abstract\n\n{abstract}\n\n'
+                f'## Links\n\n' + "\n".join(f"- {l}" for l in links)
+            )
+            arxiv_dir.mkdir(parents=True, exist_ok=True)
+            atomic_write(file_path, md)
+            rel = file_path.relative_to(self.config.wiki_path)
+            preview = abstract[:500].strip()
+            return (
+                f"Downloaded arXiv paper '{title}' to {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Use file_read to read the full entry."
+            )
+        except Exception as e:
+            return f"Error fetching arXiv paper '{arxiv_id}': {e}"
+
+    # ── OpenAlex ──────────────────────────────────────────────────────────────
+
+    def openalex_search(self, query: str, max_results: int = 5) -> str:
+        """Search OpenAlex for peer-reviewed academic works."""
+        import json
+        import urllib.request
+        import urllib.parse
+
+        try:
+            max_results = max(1, min(int(max_results), 10))
+        except Exception:
+            max_results = 5
+
+        params = urllib.parse.urlencode({
+            "search": query,
+            "per-page": max_results,
+            "select": "id,title,authorships,publication_year,doi,open_access,abstract_inverted_index",
+            "mailto": "knrs@research.agent",
+        })
+        url = f"https://api.openalex.org/works?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            works = data.get("results", [])
+            if not works:
+                return f"No OpenAlex results for '{query}'."
+            lines = [f"OpenAlex results for '{query}':"]
+            for work in works:
+                title = work.get("title") or "Unknown title"
+                year = work.get("publication_year", "")
+                doi = work.get("doi") or ""
+                authors = [
+                    a["author"]["display_name"]
+                    for a in work.get("authorships", [])[:3]
+                    if a.get("author")
+                ]
+                author_str = ", ".join(authors) + (
+                    "..." if len(work.get("authorships", [])) > 3 else ""
+                )
+                # Reconstruct abstract from inverted index
+                abstract = ""
+                aii = work.get("abstract_inverted_index")
+                if aii:
+                    try:
+                        max_pos = max(pos for positions in aii.values() for pos in positions)
+                        words: list[str] = [""] * (max_pos + 1)
+                        for word, positions in aii.items():
+                            for pos in positions:
+                                if pos <= max_pos:
+                                    words[pos] = word
+                        abstract = " ".join(words)[:250]
+                    except Exception:
+                        pass
+                lines.append(
+                    f"\n- {title} ({year})\n"
+                    f"  Authors: {author_str}\n"
+                    f"  DOI: {doi}\n"
+                    f"  Abstract: {abstract}..."
+                )
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error searching OpenAlex: {e}"
+
+    # ── Wikidata ──────────────────────────────────────────────────────────────
+
+    def wikidata_search(self, query: str) -> str:
+        """Search Wikidata for entities by name."""
+        import json
+        import urllib.request
+        import urllib.parse
+
+        params = urllib.parse.urlencode({
+            "action": "wbsearchentities",
+            "search": query,
+            "language": "en",
+            "limit": 10,
+            "format": "json",
+        })
+        url = f"https://www.wikidata.org/w/api.php?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            entities = data.get("search", [])
+            if not entities:
+                return f"No Wikidata entities found for '{query}'."
+            lines = [f"Wikidata search results for '{query}':"]
+            for e in entities:
+                qid = e.get("id", "")
+                label = e.get("label", "")
+                desc = e.get("description", "")
+                lines.append(f"- {label} ({qid}): {desc}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error searching Wikidata: {e}"
+
+    # Property labels for wikidata_entity output
+    _WD_PROPS: dict[str, str] = {
+        "P569": "date of birth",
+        "P570": "date of death",
+        "P19": "place of birth",
+        "P20": "place of death",
+        "P21": "sex or gender",
+        "P27": "country of citizenship",
+        "P106": "occupation",
+        "P31": "instance of",
+        "P571": "inception",
+        "P576": "dissolved",
+        "P577": "publication date",
+        "P585": "point in time",
+        "P800": "notable works",
+        "P50": "author",
+        "P123": "publisher",
+        "P136": "genre",
+        "P364": "original language",
+        "P495": "country of origin",
+    }
+
+    def wikidata_entity(self, entity_id: str) -> str:
+        """Fetch structured data for a Wikidata entity by Q-identifier."""
+        import json
+        import urllib.request
+
+        entity_id = entity_id.strip().upper()
+        if not entity_id.startswith("Q"):
+            return "Error: entity_id must be a Q-identifier (e.g. 'Q9312' for Kant)."
+
+        url = f"https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "knrs/0.1.0 AgentBot"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            entity = data.get("entities", {}).get(entity_id, {})
+            if not entity:
+                return f"Entity {entity_id} not found."
+
+            label = entity.get("labels", {}).get("en", {}).get("value", entity_id)
+            description = entity.get("descriptions", {}).get("en", {}).get("value", "")
+            claims = entity.get("claims", {})
+
+            facts: list[str] = []
+            for prop, prop_label in self._WD_PROPS.items():
+                if prop not in claims:
+                    continue
+                snak = claims[prop][0].get("mainsnak", {})
+                dv = snak.get("datavalue", {})
+                dtype = dv.get("type", "")
+                value = dv.get("value", "")
+                if dtype == "string":
+                    facts.append(f"- {prop_label}: {value}")
+                elif dtype == "monolingualtext":
+                    facts.append(f"- {prop_label}: {value.get('text', '') if isinstance(value, dict) else value}")
+                elif dtype == "time" and isinstance(value, dict):
+                    facts.append(f"- {prop_label}: {value.get('time', '')}")
+                elif dtype == "wikibase-entityid" and isinstance(value, dict):
+                    sub_id = value.get("id", "")
+                    facts.append(f"- {prop_label}: {sub_id}")
+
+            result = f"**{label}** ({entity_id})\n{description}\n"
+            if facts:
+                result += "\nKey facts:\n" + "\n".join(facts)
+            result += f"\n\nFull data: https://www.wikidata.org/wiki/{entity_id}"
+            return result
+        except Exception as e:
+            return f"Error fetching Wikidata entity '{entity_id}': {e}"
+
+    # ── Internet Archive ──────────────────────────────────────────────────────
+
+    _IA_UA = "knrs/0.1.0 AgentBot (research assistant)"
+
+    def archive_search(self, query: str, max_results: int = 5) -> str:
+        """Search the Internet Archive for texts."""
+        import json
+        import urllib.request
+        import urllib.parse
+
+        try:
+            max_results = max(1, min(int(max_results), 10))
+        except Exception:
+            max_results = 5
+
+        params = urllib.parse.urlencode({
+            "q": f"({query}) AND mediatype:texts",
+            "output": "json",
+            "rows": max_results,
+            "sort": "downloads desc",
+        }) + "&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=date"
+        url = f"https://archive.org/advancedsearch.php?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": self._IA_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            docs = data.get("response", {}).get("docs", [])
+            if not docs:
+                return f"No Internet Archive texts found for '{query}'."
+            lines = [f"Internet Archive search results for '{query}':"]
+            for doc in docs:
+                ident = doc.get("identifier", "")
+                title = doc.get("title", "Unknown title")
+                creator = doc.get("creator", "")
+                date = doc.get("date", "")
+                if isinstance(creator, list):
+                    creator = ", ".join(creator)
+                if isinstance(date, list):
+                    date = date[0]
+                lines.append(
+                    f"- {title}\n"
+                    f"  Creator: {creator} | Date: {date}\n"
+                    f"  Identifier: {ident}\n"
+                    f"  URL: https://archive.org/details/{ident}"
+                )
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error searching Internet Archive: {e}"
+
+    def archive_fetch(self, identifier: str) -> str:
+        """Download a text from the Internet Archive by identifier."""
+        import json
+        import urllib.request
+        from calibre.converter import atomic_write
+
+        identifier = identifier.strip()
+        ia_dir = self.research_root / "InternetArchive"
+        safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in identifier)
+        file_path = ia_dir / f"{safe_id} (Internet Archive).md"
+
+        if file_path.exists():
+            text = file_path.read_text(encoding="utf-8")
+            preview = text[text.find("\n\n") + 2:][:500].strip()
+            rel = file_path.relative_to(self.config.wiki_path)
+            return (
+                f"Loaded cached Internet Archive text '{identifier}' from {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Use file_read to read the full text."
+            )
+
+        meta_url = f"https://archive.org/metadata/{identifier}"
+        req = urllib.request.Request(meta_url, headers={"User-Agent": self._IA_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                meta = json.loads(resp.read().decode("utf-8"))
+            if not meta:
+                return f"Error: Internet Archive item '{identifier}' not found."
+
+            ia_meta = meta.get("metadata", {})
+
+            def _first(v: object) -> str:
+                if isinstance(v, list):
+                    return v[0] if v else ""
+                return str(v) if v else ""
+
+            title = _first(ia_meta.get("title", identifier))
+            creator = _first(ia_meta.get("creator", ""))
+            date = _first(ia_meta.get("date", ""))
+            description = _first(ia_meta.get("description", ""))
+
+            # Find a suitable text file
+            files = meta.get("files", [])
+            text_file: str | None = None
+            for preferred_ext in ("_djvu.txt", "_full_text.txt", ".txt"):
+                for f in files:
+                    fname = f.get("name", "")
+                    if fname.endswith(preferred_ext) and not fname.endswith("_meta.txt"):
+                        text_file = fname
+                        break
+                if text_file:
+                    break
+
+            text_content = ""
+            if text_file:
+                text_url = f"https://archive.org/download/{identifier}/{text_file}"
+                text_req = urllib.request.Request(text_url, headers={"User-Agent": self._IA_UA})
+                try:
+                    with urllib.request.urlopen(text_req, timeout=30) as resp:
+                        raw = resp.read()
+                    text_content = raw.decode("utf-8", errors="replace")
+                    if len(text_content) > 50_000:
+                        text_content = (
+                            text_content[:50_000]
+                            + "\n\n[... text truncated at 50 000 characters ...]"
+                        )
+                except Exception as e:
+                    text_content = f"(Could not download text: {e})"
+            else:
+                text_content = (
+                    f"(No plain-text file found for this item. "
+                    f"Browse manually: https://archive.org/details/{identifier})"
+                )
+
+            ia_dir.mkdir(parents=True, exist_ok=True)
+            md = (
+                f'---\ntitle: "{title} (Internet Archive)"\n'
+                f'source: "Internet Archive"\n'
+                f'source_url: "https://archive.org/details/{identifier}"\n'
+                f'creator: "{creator}"\ndate: "{date}"\n---\n\n'
+                f'# {title}\n\n'
+                f'**Creator:** {creator}\n**Date:** {date}\n**Identifier:** {identifier}\n\n'
+                f'## Description\n\n{description}\n\n'
+                f'## Text\n\n{text_content}'
+            )
+            atomic_write(file_path, md)
+            rel = file_path.relative_to(self.config.wiki_path)
+            preview = text_content[:500].strip()
+            return (
+                f"Downloaded Internet Archive text '{title}' to {rel}\n\nPreview:\n{preview}...\n\n"
+                f"Use file_read to read the full text."
+            )
+        except Exception as e:
+            return f"Error fetching Internet Archive item '{identifier}': {e}"
+
+    # ── Computational tools ───────────────────────────────────────────────────
+
+    def python_eval(self, code: str) -> str:
+        """Execute a sandboxed Python snippet via RestrictedPython."""
+        import io
+        import math
+        import statistics
+
+        try:
+            from RestrictedPython import (
+                compile_restricted,
+                safe_globals,
+                safe_builtins,
+                PrintCollector,
+            )
+            from RestrictedPython.Guards import safer_getattr, guarded_unpack_sequence
+        except ImportError:
+            return "Error: RestrictedPython is not installed. Run: uv add RestrictedPython"
+
+        allowed_builtins: dict[str, object] = {
+            **safe_builtins,
+            "range": range,
+            "len": len,
+            "sum": sum,
+            "min": min,
+            "max": max,
+            "abs": abs,
+            "round": round,
+            "sorted": sorted,
+            "reversed": reversed,
+            "enumerate": enumerate,
+            "zip": zip,
+            "map": map,
+            "filter": filter,
+            "list": list,
+            "dict": dict,
+            "set": set,
+            "tuple": tuple,
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "isinstance": isinstance,
+            "type": type,
+            "repr": repr,
+        }
+        globs: dict[str, object] = {
+            **safe_globals,
+            "__builtins__": allowed_builtins,
+            "math": math,
+            "statistics": statistics,
+            "_getattr_": safer_getattr,
+            "_getitem_": lambda obj, key: obj[key],  # default item access
+            "_getiter_": iter,
+            "_write_": lambda x: x,
+            "_inplacevar_": lambda op, x, y: x + y if op == "+=" else x - y,
+            "_print_": PrintCollector,  # RestrictedPython print() guard
+            "_unpack_sequence_": guarded_unpack_sequence,
+        }
+
+        try:
+            byte_code = compile_restricted(code, "<python_eval>", "exec")
+            exec(byte_code, globs)  # noqa: S102
+            # PrintCollector: calling the instance returns collected text
+            printer = globs.get("_print")
+            output = printer() if callable(printer) else ""
+            return output if output.strip() else "(executed — no output produced)"
+        except SyntaxError as e:
+            return f"Syntax error: {e}"
+        except Exception as e:
+            return f"Runtime error: {e}"
+
+
+
+
+    def maxima_eval(self, expression: str) -> str:
+        """Evaluate a Maxima CAS expression."""
+        import shutil
+        import subprocess
+
+        if not shutil.which("maxima"):
+            return "Error: 'maxima' is not installed. Install it via your package manager."
+
+        batch = f"display2d: false$ {expression.rstrip(';')};"
+        try:
+            result = subprocess.run(
+                ["maxima", "--quiet", "--batch-string", batch],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            # Keep only output lines (those with (%o or raw values)
+            raw = result.stdout + result.stderr
+            lines = [
+                l for l in raw.splitlines()
+                if l.strip()
+                and not l.startswith("Maxima")
+                and "(%i" not in l
+                and not l.startswith(";;")
+            ]
+            output = "\n".join(lines).strip()
+            return output or "(no output)"
+        except subprocess.TimeoutExpired:
+            return "Error: Maxima evaluation timed out (30 s)."
+        except Exception as e:
+            return f"Error running Maxima: {e}"
+
     def dispatch(self, tool_name: str, args: dict[str, Any]) -> str:
         """Execute a tool dynamically."""
         logger.debug(f"Agent tool call: {tool_name}({args})")
@@ -764,6 +1387,28 @@ class AgentTools:
             return self.wikipedia_fetch(**args)
         elif tool_name == "wikilink_search":
             return self.wikilink_search(**args)
+        elif tool_name == "sep_search":
+            return self.sep_search(**args)
+        elif tool_name == "sep_fetch":
+            return self.sep_fetch(**args)
+        elif tool_name == "arxiv_search":
+            return self.arxiv_search(**args)
+        elif tool_name == "arxiv_fetch":
+            return self.arxiv_fetch(**args)
+        elif tool_name == "openalex_search":
+            return self.openalex_search(**args)
+        elif tool_name == "wikidata_search":
+            return self.wikidata_search(**args)
+        elif tool_name == "wikidata_entity":
+            return self.wikidata_entity(**args)
+        elif tool_name == "archive_search":
+            return self.archive_search(**args)
+        elif tool_name == "archive_fetch":
+            return self.archive_fetch(**args)
+        elif tool_name == "python_eval":
+            return self.python_eval(**args)
+        elif tool_name == "maxima_eval":
+            return self.maxima_eval(**args)
         elif tool_name == "check_wiki":
             return self.check_wiki()
         elif tool_name == "update_index":
@@ -771,5 +1416,6 @@ class AgentTools:
         elif tool_name == "extract_timeline":
             return self.extract_timeline(**args)
         else:
-            return f"Error: Unknown tool {tool_name}"
+            return f"Error: Unknown tool '{tool_name}'"
+
 
