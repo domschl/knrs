@@ -298,7 +298,7 @@ def main() -> None:
                 doc_name = Path(r.bare_path).name
                 header = f"### {i}. {doc_name}\n"
                 header += f"**Path:** `{r.bare_path}` | **Source:** `{r.source_label}` | **Score:** `{r.score:.4f}`\n"
-                chunk_text = get_context_aware_text(searcher, r)
+                chunk_text, _, _ = get_context_aware_text(searcher, r)
                 processed_results.append([header, chunk_text, r])
                 
             if args.highlight and results:
@@ -336,7 +336,6 @@ def main() -> None:
         cmd_sync(mock_args, cfg)
 
     elif args.command == "benchmark":
-        from pathlib import Path
         workspace_root = Path(__file__).parent.resolve()
         results_path = Path(args.results) if args.results else None
 

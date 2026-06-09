@@ -47,7 +47,7 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> tupl
     elif result.source_label == "wiki":
         file_path = searcher.config.wiki_path / result.bare_path
     else:
-        return result.text
+        return result.text, 0, 0
         
     if file_path is None or not file_path.exists():
         return result.text, 0, 0

@@ -316,7 +316,7 @@ def cmd_search(args: list[str], cfg: KnrsConfig) -> None:
             doc_name = Path(r.bare_path).name
             header = f"### {i}. {doc_name}\n"
             header += f"**Path:** `{r.bare_path}` | **Source:** `{r.source_label}` | **Score:** `{r.score:.4f}`\n\n"
-            chunk_text = get_context_aware_text(searcher, r)
+            chunk_text, _, _ = get_context_aware_text(searcher, r)
             processed_results.append([header, chunk_text, r])
             
         if highlight and results:
