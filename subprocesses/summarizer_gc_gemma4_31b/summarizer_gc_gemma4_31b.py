@@ -61,7 +61,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
     "model_name": "gemma-4-31b-it",
     "api_key": "",
-    "rate_blocked_until": ""
+    "rate_blocked_until": "",
+    "summary_max_tokens": 2500
 }
 
 def get_platform_config() -> dict[str, Any]:
@@ -285,7 +286,7 @@ def main() -> None:
     parser.add_argument("source", nargs="?", help="Source markdown file")
     parser.add_argument("destination", nargs="?", help="Destination summary file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
-    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=2500)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=None)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     parser.add_argument("--unload", action="store_true", help="Unload active model (no-op for this backend)")
     args = parser.parse_args()
@@ -306,6 +307,7 @@ def main() -> None:
                 "model_name":         {"type": "str"},
                 "api_key":            {"type": "str"},
                 "rate_blocked_until": {"type": "str", "read_only": True},
+                "summary_max_tokens": {"type": "int", "min": 100, "max": 100000},
             },
         }
         print(json.dumps(cap))
@@ -316,10 +318,12 @@ def main() -> None:
 
     config = get_platform_config()
     
+    summary_tokens = args.summary_max_tokens if args.summary_max_tokens is not None else config.get("summary_max_tokens", DEFAULT_CONFIG["summary_max_tokens"])
+    
     if args.query:
-        answer_query(args.query, args.source, args.destination, config, args.summary_max_tokens)
+        answer_query(args.query, args.source, args.destination, config, summary_tokens)
     else:
-        summarize_file(args.source, args.destination, config, args.summary_max_tokens)
+        summarize_file(args.source, args.destination, config, summary_tokens)
 
 if __name__ == "__main__":
     main()

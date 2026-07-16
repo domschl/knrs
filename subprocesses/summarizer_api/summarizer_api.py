@@ -43,7 +43,8 @@ from summarizer_core.utils import get_platform_config, get_llm_server_config, wa
 VERSION = "0.1.0"
 DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
-    "model_name": "gemma-4-31b-ud-q4"
+    "model_name": "gemma-4-31b-ud-q4",
+    "summary_max_tokens": 2500
 }
 
 class ApiEngine(BaseEngine):
@@ -227,7 +228,7 @@ def main() -> None:
     parser.add_argument("source", nargs="?", help="Path to the source markdown file")
     parser.add_argument("destination", nargs="?", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
-    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=2500)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=None)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     parser.add_argument("--unload", action="store_true", help="Unload the active model from llama.cpp server and exit")
     args = parser.parse_args()
@@ -268,6 +269,7 @@ def main() -> None:
             "parameters": {
                 "chunk_size":  {"type": "int", "min": 1000, "max": 500000},
                 "model_name":  {"type": "str"},
+                "summary_max_tokens": {"type": "int", "min": 100, "max": 100000},
             },
         }
         import json
@@ -279,10 +281,12 @@ def main() -> None:
 
     config = get_platform_config("summarizer_config_api.json", DEFAULT_LOCAL_CONFIG)
     
+    summary_tokens = args.summary_max_tokens if args.summary_max_tokens is not None else config.get("summary_max_tokens", DEFAULT_LOCAL_CONFIG["summary_max_tokens"])
+    
     if args.query:
-        answer_query(args.query, args.source, args.destination, config, server_config, args.summary_max_tokens)
+        answer_query(args.query, args.source, args.destination, config, server_config, summary_tokens)
     else:
-        summarize_file(args.source, args.destination, config, server_config, args.summary_max_tokens)
+        summarize_file(args.source, args.destination, config, server_config, summary_tokens)
 
 if __name__ == "__main__":
     main()

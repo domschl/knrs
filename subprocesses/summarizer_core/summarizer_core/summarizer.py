@@ -82,8 +82,8 @@ def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_siz
         return ""
         
     consolidated_text = "\n\n".join(chunk_summaries)
-    
-    final_prompt_text = f"The following are summaries of segments from '{filepath}'. Please combine them into a single coherent, detailed summary:\n\n{consolidated_text}"
+    tok_limit:int = int(final_sum_tokens * 0.95)
+    final_prompt_text = f"The following are summaries of segments from '{filepath}'. Please combine them into a single coherent, detailed summary. Keep the output detailed yet concise, with a length appropriate for a comprehensive overview (maximum limit is about {tok_limit} tokens):\n\n{consolidated_text}"
     
     final_prompt: str | list[dict[str, str]] = final_prompt_text
     if hasattr(engine, 'format_prompt'):

@@ -82,7 +82,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
     "model_id": "mlx-community/gemma-4-31b-it-4bit",
     "model_name": "gemma-4-31b-it-mlx",
-    "assistant_id": "mlx-community/gemma-4-31B-it-assistant-bf16"
+    "assistant_id": "mlx-community/gemma-4-31B-it-assistant-bf16",
+    "summary_max_tokens": 2500
 }
 
 class MLXEngine(BaseEngine):
@@ -230,7 +231,7 @@ def main() -> None:
     parser.add_argument("source", nargs="?", help="Path to the source markdown file")
     parser.add_argument("destination", nargs="?", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
-    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=2500)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=None)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     parser.add_argument("--unload", action="store_true", help="Unload active model (no-op for this backend)")
     
@@ -252,6 +253,7 @@ def main() -> None:
                 "model_id":     {"type": "str"},
                 "model_name":   {"type": "str"},
                 "assistant_id": {"type": "str"},
+                "summary_max_tokens": {"type": "int", "min": 100, "max": 100000},
             },
         }
         print(json.dumps(cap))
@@ -261,10 +263,12 @@ def main() -> None:
         parser.error("source and destination are required unless --capabilities or --unload is passed")
     config = get_platform_config("summarizer_config_macos.json", DEFAULT_CONFIG)
     
+    summary_tokens = args.summary_max_tokens if args.summary_max_tokens is not None else config.get("summary_max_tokens", DEFAULT_CONFIG["summary_max_tokens"])
+    
     if args.query:
-        answer_query(args.query, args.source, args.destination, config, args.summary_max_tokens)
+        answer_query(args.query, args.source, args.destination, config, summary_tokens)
     else:
-        summarize_file(args.source, args.destination, config, args.summary_max_tokens)
+        summarize_file(args.source, args.destination, config, summary_tokens)
 
 if __name__ == "__main__":
     main()
