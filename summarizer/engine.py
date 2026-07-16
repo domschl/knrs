@@ -39,7 +39,7 @@ def summarize_file(
     summarizer_name: str,
     *,
     dry_run: bool = False,
-    summary_max_tokens: int = 2500,
+    summary_max_tokens: int | None = None,
 ) -> bool:
     """
     Summarise *source_md* and write the result to *target_path*.
@@ -85,8 +85,11 @@ def summarize_file(
     if logging.getLogger().isEnabledFor(logging.DEBUG):
         env["KNRS_VERBOSE"] = "1"
     try:
+        cmd = [python_exe, str(script), str(source_md), str(target_path)]
+        if summary_max_tokens is not None:
+            cmd.extend(["--summary_max_tokens", str(summary_max_tokens)])
         p = subprocess.Popen(
-            [python_exe, str(script), str(source_md), str(target_path), "--summary_max_tokens", str(summary_max_tokens)],
+            cmd,
             env=env
         )
         try:
@@ -123,7 +126,7 @@ def answer_query(
     source_md: Path,
     target_path: Path,
     summarizer_name: str,
-    summary_max_tokens: int = 2500,
+    summary_max_tokens: int | None = None,
 ) -> bool:
     """
     Answer a query based on the contents of *source_md* and write the result to *target_path*.
@@ -152,8 +155,11 @@ def answer_query(
     if logging.getLogger().isEnabledFor(logging.DEBUG):
         env["KNRS_VERBOSE"] = "1"
     try:
+        cmd = [python_exe, str(script), str(source_md), str(target_path), "--query", query]
+        if summary_max_tokens is not None:
+            cmd.extend(["--summary_max_tokens", str(summary_max_tokens)])
         p = subprocess.Popen(
-            [python_exe, str(script), str(source_md), str(target_path), "--query", query, "--summary_max_tokens", str(summary_max_tokens)],
+            cmd,
             env=env
         )
         try:

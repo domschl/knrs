@@ -78,8 +78,14 @@ class ApiEngine(BaseEngine):
             "temperature": temp,
             "repeat_penalty": repetition_penalty,
             "enable_thinking": False,
-            "extra_body": {
+            "chat_template_kwargs": {
                 "enable_thinking": False
+            },
+            "extra_body": {
+                "enable_thinking": False,
+                "chat_template_kwargs": {
+                    "enable_thinking": False
+                }
             }
         }
         

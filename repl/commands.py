@@ -445,7 +445,7 @@ def cmd_sync_git(args: list[str], cfg: KnrsConfig) -> None:
                             dst_path = Path(dst_fd.name)
                         try:
                             q = "Generate a concise git commit message (1 line) for these changes. Respond ONLY with the message, no quotes or prefix."
-                            success = answer_query(q, src_path, dst_path, cfg.summarizer_name, summary_max_tokens=50)
+                            success = answer_query(q, src_path, dst_path, cfg.summarizer_name, summary_max_tokens=80)
                             if success and dst_path.exists():
                                 with open(dst_path, "r", encoding="utf-8") as f:
                                     msg = f.read().strip()
