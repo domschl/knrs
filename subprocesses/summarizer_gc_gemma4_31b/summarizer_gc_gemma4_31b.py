@@ -287,8 +287,12 @@ def main() -> None:
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
+    parser.add_argument("--unload", action="store_true", help="Unload active model (no-op for this backend)")
     args = parser.parse_args()
     
+    if args.unload:
+        sys.exit(0)
+        
     if args.capabilities:
         cap: dict[str, Any] = {
             "name": "summarizer_gc_gemma4_31b",
@@ -308,7 +312,7 @@ def main() -> None:
         sys.exit(0)
 
     if not args.source or not args.destination:
-        parser.error("source and destination are required unless --capabilities is passed")
+        parser.error("source and destination are required unless --capabilities or --unload is passed")
 
     config = get_platform_config()
     

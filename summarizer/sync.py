@@ -346,5 +346,9 @@ def run_summary_sync(
             for a in parallel:
                 done += 1
                 _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
+        
+        # Unload the model from VRAM after the last summarization task finishes.
+        from summarizer.engine import unload_model
+        unload_model(cfg.summarizer_name)
 
     logger.info("Summary sync complete.")

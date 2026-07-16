@@ -100,6 +100,34 @@ class ApiEngine(BaseEngine):
             logger.error(f"API request failed: {e}")
             raise
 
+    def unload(self) -> bool:
+        """Actively unload the model from the server (llama.cpp)."""
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        
+        payload = {"model": self.model}
+        endpoints = ["/models/unload", "/v1/models/unload"]
+        success = False
+        
+        for endpoint in endpoints:
+            url = f"{self.url}{endpoint}"
+            try:
+                logger.info(f"Attempting to unload model '{self.model}' via {url}...")
+                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    logger.info(f"Successfully unloaded model '{self.model}' via {endpoint}.")
+                    success = True
+                    break
+                else:
+                    logger.debug(f"Endpoint {endpoint} returned status code {response.status_code}: {response.text}")
+            except Exception as e:
+                logger.debug(f"Failed to connect to {url}: {e}")
+        
+        if not success:
+            logger.warning(f"Could not unload model '{self.model}' from the server.")
+        return success
+
 def summarize_file(source_file: str, destination_file: str, config: dict[str, Any], server_config: dict[str, Any], summary_max_tokens: int) -> None:
     if not os.path.exists(source_file):
         logger.error(f"Source file does not exist: {source_file}")
@@ -190,10 +218,19 @@ def main() -> None:
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
     parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
+    parser.add_argument("--unload", action="store_true", help="Unload the active model from llama.cpp server and exit")
     args = parser.parse_args()
     
     server_config = get_llm_server_config()
     
+    if args.unload:
+        config = get_platform_config("summarizer_config_api.json", DEFAULT_LOCAL_CONFIG)
+        engine = ApiEngine(server_config, config)
+        if engine.unload():
+            sys.exit(0)
+        else:
+            sys.exit(1)
+            
     if args.capabilities:
         url: str = server_config.get("url", "http://localhost:8180").rstrip("/")
         api_key: str | None = server_config.get("api_key")
@@ -227,7 +264,7 @@ def main() -> None:
         sys.exit(0)
         
     if not args.source or not args.destination:
-        parser.error("source and destination are required unless --capabilities is passed")
+        parser.error("source and destination are required unless --capabilities or --unload is passed")
 
     config = get_platform_config("summarizer_config_api.json", DEFAULT_LOCAL_CONFIG)
     

@@ -172,3 +172,33 @@ def answer_query(
     except Exception as exc:
         logger.error("Summariser subprocess failed for query: %s", exc)
         return False
+
+
+def unload_model(summarizer_name: str) -> bool:
+    """
+    Actively unload the model currently in use.
+
+    Returns:
+        True on success, False on failure.
+    """
+    script = _summarizer_script(summarizer_name)
+    if not script.exists():
+        logger.error("Summarizer script not found: %s", script)
+        return False
+
+    python_exe = _summarizer_python(script)
+    logger.info("Requesting unload of summarizer model via %s", summarizer_name)
+    import os
+    env = os.environ.copy()
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        env["KNRS_VERBOSE"] = "1"
+    try:
+        p = subprocess.Popen(
+            [python_exe, str(script), "--unload"],
+            env=env
+        )
+        p.wait()
+        return p.returncode == 0
+    except Exception as exc:
+        logger.error("Summariser unload subprocess failed: %s", exc)
+        return False
