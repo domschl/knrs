@@ -159,6 +159,7 @@ class GemmaEngine(BaseEngine):
                     config=types.GenerateContentConfig(
                         max_output_tokens=max_tokens,
                         temperature=temp,
+                        thinking_config=types.ThinkingConfig(thinking_level="minimal"),
                     )
                 )
                 self.last_request_time = time.time()

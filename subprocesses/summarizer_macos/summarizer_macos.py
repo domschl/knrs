@@ -99,7 +99,13 @@ class MLXEngine(BaseEngine):
             self.drafter, self.draft_kind = load_drafter(assistant_id, kind="mtp")
 
     def format_prompt(self, messages: list[dict[str, str]]) -> str:
-        return apply_chat_template(self.processor, self.config_data, messages, num_images=0)
+        return apply_chat_template(
+            self.processor,
+            self.config_data,
+            messages,
+            num_images=0,
+            chat_template_kwargs={"enable_thinking": False}
+        )
 
     def generate(self, prompt: str, max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         gen_kwargs: dict[str, Any] = {

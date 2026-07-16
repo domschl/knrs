@@ -74,7 +74,11 @@ class ApiEngine(BaseEngine):
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temp,
-            "repeat_penalty": repetition_penalty
+            "repeat_penalty": repetition_penalty,
+            "enable_thinking": False,
+            "extra_body": {
+                "enable_thinking": False
+            }
         }
         
         try:
