@@ -141,7 +141,7 @@ class GemmaEngine(BaseEngine):
         self.min_delay: float = 4.1
         self.backoff: float = 10
 
-    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 2500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         attempts = 0
         max_attempts = 10
 
@@ -285,7 +285,7 @@ def main() -> None:
     parser.add_argument("source", nargs="?", help="Source markdown file")
     parser.add_argument("destination", nargs="?", help="Destination summary file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
-    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=2500)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     parser.add_argument("--unload", action="store_true", help="Unload active model (no-op for this backend)")
     args = parser.parse_args()

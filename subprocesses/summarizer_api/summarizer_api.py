@@ -57,7 +57,7 @@ class ApiEngine(BaseEngine):
         # Return messages as-is for the chat API
         return messages
 
-    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 2500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -73,6 +73,7 @@ class ApiEngine(BaseEngine):
             "model": self.model,
             "messages": messages,
             "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,  # For newer API compatibility
             "temperature": temp,
             "repeat_penalty": repetition_penalty,
             "enable_thinking": False,
@@ -95,6 +96,16 @@ class ApiEngine(BaseEngine):
                     f"Model generated reasoning_content but empty main content. "
                     f"This usually indicates the max_tokens limit ({max_tokens}) was hit during the reasoning phase."
                 )
+            
+            finish_reason = choice.get("finish_reason")
+            if finish_reason == "length":
+                logger.warning(
+                    f"Generation was cut off ('finish_reason': 'length'). "
+                    f"This means the model output hit either the 'max_tokens' limit ({max_tokens}) or "
+                    f"the server's context window limit (n_ctx). Consider increasing 'summary_max_tokens' "
+                    f"or starting the llama.cpp server with a larger context window (-c / --ctx-size)."
+                )
+                
             return content.strip()
         except Exception as e:
             logger.error(f"API request failed: {e}")
@@ -216,7 +227,7 @@ def main() -> None:
     parser.add_argument("source", nargs="?", help="Path to the source markdown file")
     parser.add_argument("destination", nargs="?", help="Path to the destination summary markdown file")
     parser.add_argument("--query", type=str, help="If provided, answer this query based on the source file instead of summarizing it.", default=None)
-    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=1500)
+    parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=2500)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     parser.add_argument("--unload", action="store_true", help="Unload the active model from llama.cpp server and exit")
     args = parser.parse_args()

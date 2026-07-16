@@ -39,7 +39,7 @@ def summarize_file(
     summarizer_name: str,
     *,
     dry_run: bool = False,
-    summary_max_tokens: int = 1500,
+    summary_max_tokens: int = 2500,
 ) -> bool:
     """
     Summarise *source_md* and write the result to *target_path*.
@@ -123,7 +123,7 @@ def answer_query(
     source_md: Path,
     target_path: Path,
     summarizer_name: str,
-    summary_max_tokens: int = 1500,
+    summary_max_tokens: int = 2500,
 ) -> bool:
     """
     Answer a query based on the contents of *source_md* and write the result to *target_path*.

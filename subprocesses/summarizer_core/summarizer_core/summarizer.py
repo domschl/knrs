@@ -14,7 +14,7 @@ from .markdown import get_answer_from_output
 
 logger = logging.getLogger("summarizer_core.summarizer")
 
-def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_size: int, doc_hash: str, chunk_sum_size: int = 2048, final_sum_tokens: int = 1500) -> str:
+def chunked_summarize(engine: BaseEngine, content: str, filepath: str, chunk_size: int, doc_hash: str, chunk_sum_size: int = 2048, final_sum_tokens: int = 2500) -> str:
     num_chunks: int = math.ceil(len(content) / chunk_size)
     filename: str = os.path.basename(filepath)
     

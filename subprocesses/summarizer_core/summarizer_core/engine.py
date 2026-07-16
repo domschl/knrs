@@ -8,6 +8,6 @@ class BaseEngine(Protocol):
         """Formats the chat messages into a model-compatible prompt."""
         ...
 
-    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 1500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
+    def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 2500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         """Generates a response from the model."""
         ...
