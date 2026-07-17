@@ -209,9 +209,24 @@ class AgentTools:
             if start_line < 1: start_line = 1
             if end_line == -1 or end_line > total_lines: end_line = total_lines
             
+            if start_line > total_lines:
+                return f"Error: start_line ({start_line}) is greater than total lines in file ({total_lines})."
+            if end_line < start_line:
+                return f"Error: end_line ({end_line}) is less than start_line ({start_line})."
+            
+            # Enforce maximum line limit to prevent context size exhaustion
+            MAX_LINES = 1000
+            is_truncated = False
+            if end_line - start_line + 1 > MAX_LINES:
+                end_line = start_line + MAX_LINES - 1
+                is_truncated = True
+            
             # 1-indexed
             selected = lines[start_line - 1 : end_line]
-            return "\n".join(selected)
+            result_content = "\n".join(selected)
+            if is_truncated:
+                result_content += f"\n\n... [TRUNCATED: Read limit of {MAX_LINES} lines reached. The file has {total_lines} lines total. Use file_read with start_line={end_line + 1} to read the next chunk] ..."
+            return result_content
         except Exception as e:
             return f"Error reading file {path}: {e}"
 

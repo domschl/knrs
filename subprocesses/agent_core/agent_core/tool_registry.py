@@ -127,7 +127,8 @@ TOOL_REGISTRY: list[ToolDef] = [
             "search result snippet or a wikilink target. Supports absolute paths, "
             "prefixed paths (e.g. 'books:History Of Rome.md'), bare stems "
             "(e.g. 'History Of Rome'), or bracketed wiki-links (e.g. '[[History Of Rome]]'). "
-            "Use -1 for end_line to read to the end of the file."
+            "Reads a maximum of 1000 lines at a time to prevent context overflow. "
+            "Use -1 for end_line to read to the end of the file (truncated to 1000 lines)."
         ),
         params=[
             ToolParam(
@@ -136,7 +137,7 @@ TOOL_REGISTRY: list[ToolDef] = [
                 "The path to read. Supports prefixed paths, bare stems, or bracketed links.",
             ),
             ToolParam("start_line", "integer", "The starting line number (1-indexed)."),
-            ToolParam("end_line", "integer", "The ending line number (use -1 to read to the end)."),
+            ToolParam("end_line", "integer", "The ending line number (use -1 to read to the end; output is limited to 1000 lines)."),
         ],
         example_args={"path": "[[History Of Rome]]", "start_line": 1, "end_line": 100},
         category="local",
