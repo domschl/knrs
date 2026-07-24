@@ -16,6 +16,10 @@ from typing import Any
 # Suppress KeyboardInterrupt globally
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
+# Silence transformers advisory warnings (e.g. missing PyTorch)
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+
 from google import genai
 from google.genai import types
 
