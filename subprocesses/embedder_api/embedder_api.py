@@ -34,7 +34,7 @@ from summarizer_core.utils import get_platform_config, get_llm_server_config, wa
 
 # Constants
 DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
-    "model_name": "embeddinggemma-300M-Q8_0",
+    "model_name": "EmbeddingGemma-300M",
     "batch_size": 1024
 }
 
