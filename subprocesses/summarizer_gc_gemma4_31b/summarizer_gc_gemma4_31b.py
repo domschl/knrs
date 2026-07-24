@@ -58,7 +58,7 @@ for handler in logging.root.handlers:
 # Constants
 VERSION = "0.1.0"
 DEFAULT_CONFIG: dict[str, Any] = {
-    "chunk_size": 200000,
+    "chunk_size": 45000,
     "model_name": "gemma-4-31b-it",
     "api_key": "",
     "rate_blocked_until": "",
@@ -134,6 +134,32 @@ def parse_retry_delay(exception: Exception) -> float | None:
     except Exception: pass
     return None
 
+_tokenizer: Any = None
+
+def get_gemma_tokenizer() -> Any:
+    global _tokenizer
+    if _tokenizer is None:
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from transformers import AutoTokenizer, logging as tf_logging
+                tf_logging.set_verbosity_error()
+                _tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-9b-it")
+        except Exception as e:
+            logger.warning(f"Local Gemma tokenizer unavailable ({e}). Falling back to character estimation.")
+            _tokenizer = False
+    return _tokenizer if _tokenizer is not False else None
+
+def count_tokens_local(text: str) -> int:
+    tok = get_gemma_tokenizer()
+    if tok:
+        try:
+            return len(tok.encode(text))
+        except Exception:
+            pass
+    return int(len(text) / 3.8)
+
 class GemmaEngine(BaseEngine):
     def __init__(self, api_key: str, model_name: str) -> None:
         self.client = genai.Client(api_key=api_key)
@@ -142,16 +168,28 @@ class GemmaEngine(BaseEngine):
         self.min_delay: float = 4.1
         self.backoff: float = 10
 
+    def _estimate_tokens(self, prompt: str | list[dict[str, str]], max_tokens: int) -> int:
+        if isinstance(prompt, str):
+            prompt_tokens = count_tokens_local(prompt)
+        else:
+            full_text = "\n".join(m.get("content", "") for m in prompt)
+            prompt_tokens = count_tokens_local(full_text)
+        return prompt_tokens + max_tokens
+
     def generate(self, prompt: str | list[dict[str, str]], max_tokens: int = 2500, temp: float = 0.2, repetition_penalty: float = 1.1) -> str:
         attempts = 0
         max_attempts = 10
+        est_tokens = self._estimate_tokens(prompt, max_tokens)
+        required_delay = max(self.min_delay, (est_tokens / 15000.0) * 60.0)
 
         while attempts < max_attempts:
             check_rate_limit()
             
             elapsed = time.time() - self.last_request_time
-            if elapsed < self.min_delay:
-                time.sleep(self.min_delay - elapsed)
+            if elapsed < required_delay:
+                wait_time = required_delay - elapsed
+                logger.info(f"Rate pacing for 16k TPM limit: waiting {wait_time:.1f}s (est {est_tokens} tokens)...")
+                time.sleep(wait_time)
 
             try:
                 response = self.client.models.generate_content(
@@ -203,6 +241,9 @@ def summarize_file(source_file: str, destination_file: str, config: dict[str, An
     chunk_size: int = config.get("chunk_size", DEFAULT_CONFIG["chunk_size"])
     model_name: str = config.get("model_name", DEFAULT_CONFIG["model_name"])
 
+    if chunk_size > 45000:
+        chunk_size = 45000
+
     if not api_key:
         logger.error("No api_key found in platform config.")
         sys.exit(1)
@@ -210,6 +251,19 @@ def summarize_file(source_file: str, destination_file: str, config: dict[str, An
     with open(source_file, 'r', encoding='utf-8') as f:
         content = f.read()
     metadata, md_text = parse_markdown(content)
+    
+    # Dynamic token-density chunk size adjustment
+    MAX_TARGET_INPUT_TOKENS = 11500
+    total_tokens = count_tokens_local(md_text)
+    if total_tokens > 0:
+        tokens_per_char = total_tokens / max(1, len(md_text))
+        token_chunk_size = int(MAX_TARGET_INPUT_TOKENS / tokens_per_char)
+        if token_chunk_size < chunk_size:
+            logger.info(
+                f"Document token density adjustment: setting chunk_size to {token_chunk_size} chars "
+                f"({total_tokens} tokens / {len(md_text)} chars) to enforce max {MAX_TARGET_INPUT_TOKENS} tokens per chunk."
+            )
+            chunk_size = max(4000, token_chunk_size)
     
     doc_hash = hashlib.sha256(md_text.encode('utf-8')).hexdigest()
     
