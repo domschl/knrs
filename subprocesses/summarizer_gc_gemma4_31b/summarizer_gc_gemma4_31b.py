@@ -170,7 +170,7 @@ class GemmaEngine(BaseEngine):
         self.model_name = model_name
         self.last_request_time: float = 0
         self.min_delay: float = 4.1
-        self.backoff: float = 10
+        self.backoff: float = 60.0
 
     def _estimate_tokens(self, prompt: str | list[dict[str, str]], max_tokens: int) -> int:
         if isinstance(prompt, str):
@@ -206,13 +206,13 @@ class GemmaEngine(BaseEngine):
                     )
                 )
                 self.last_request_time = time.time()
-                self.backoff = 10 # Reset backoff on success
+                self.backoff = 60.0 # Reset backoff on success
                 if not response.text: return "[Summary blocked or empty response]"
                 return response.text.strip()
             except Exception as e:
                 attempts += 1
                 msg = str(e).lower()
-                if "rate limit" in msg or ("quota" in msg and "daily" in msg):  
+                if ("quota" in msg and "daily" in msg) or "per day" in msg:  
                     logger.error("Daily API Quota reached.")
                     tomorrow = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0) + timedelta(days=1)
                     update_block_until(tomorrow.isoformat())
@@ -220,10 +220,11 @@ class GemmaEngine(BaseEngine):
                 
                 status_code = getattr(e, 'code', None) or getattr(e, 'status_code', None)
                 if "429" in msg or "resource_exhausted" in msg or "rate limit" in msg or status_code == 429:
-                    delay = parse_retry_delay(e) or self.backoff
-                    logger.warning(f"Rate limit hit. Suggest retry in {delay}s. Attempt {attempts}/{max_attempts}")
+                    suggested = parse_retry_delay(e) or 0.0
+                    delay = max(60.0, suggested, self.backoff)
+                    logger.warning(f"Rate limit hit. Suggest retry in {delay:.1f}s. Attempt {attempts}/{max_attempts}")
                     time.sleep(delay)
-                    self.backoff *= 2
+                    self.backoff = max(self.backoff * 2, delay * 2)
                     continue
                 
                 is_transient = (
@@ -233,9 +234,10 @@ class GemmaEngine(BaseEngine):
                     status_code in (500, 503, 504)
                 )
                 if is_transient:
-                    logger.warning(f"Transient error (code={status_code}): {e}. Retrying in {self.backoff}s...")
-                    time.sleep(self.backoff)
-                    self.backoff *= 2
+                    delay = max(60.0, self.backoff)
+                    logger.warning(f"Transient error (code={status_code}): {e}. Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                    self.backoff = max(self.backoff * 2, delay * 2)
                     continue
                 raise e
         raise Exception("Max retry attempts reached.")
