@@ -44,7 +44,8 @@ VERSION = "0.1.0"
 DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
     "chunk_size": 200000,
     "model_name": "gemma-4-31b-ud-q4",
-    "summary_max_tokens": 2500
+    "summary_max_tokens": 2500,
+    "auto_unload_model": False,
 }
 
 class ApiEngine(BaseEngine):
@@ -190,6 +191,8 @@ def summarize_file(source_file: str, destination_file: str, config: dict[str, An
         os.replace(temp_file, destination_file)
             
         logger.info(f"Successfully wrote summary to: {destination_file}")
+        if config.get("auto_unload_model", DEFAULT_LOCAL_CONFIG["auto_unload_model"]):
+            engine.unload()
         sys.exit(0)
     except Exception as e:
         logger.exception(f"Error during summarization: {e}")
@@ -221,6 +224,8 @@ def answer_query(query: str, source_file: str, destination_file: str, config: di
         os.replace(temp_file, destination_file)
             
         logger.info(f"Successfully wrote answer to: {destination_file}")
+        if config.get("auto_unload_model", DEFAULT_LOCAL_CONFIG["auto_unload_model"]):
+            engine.unload()
         sys.exit(0)
     except Exception as e:
         logger.exception(f"Error during Q&A: {e}")
@@ -276,6 +281,7 @@ def main() -> None:
                 "chunk_size":  {"type": "int", "min": 1000, "max": 500000},
                 "model_name":  {"type": "str"},
                 "summary_max_tokens": {"type": "int", "min": 100, "max": 100000},
+                "auto_unload_model": {"type": "bool"},
             },
         }
         import json
