@@ -180,9 +180,13 @@ def answer_query(
         return False
 
 
-def unload_model(summarizer_name: str) -> bool:
+def unload_model(summarizer_name: str, force: bool = False) -> bool:
     """
     Actively unload the model currently in use.
+
+    Args:
+        summarizer_name: Name of the summarizer subprocess.
+        force: If True, bypass auto_unload_model config check and force unload.
 
     Returns:
         True on success, False on failure.
@@ -199,8 +203,11 @@ def unload_model(summarizer_name: str) -> bool:
     if logging.getLogger().isEnabledFor(logging.DEBUG):
         env["KNRS_VERBOSE"] = "1"
     try:
+        cmd = [python_exe, str(script), "--unload"]
+        if force:
+            cmd.append("--force")
         p = subprocess.Popen(
-            [python_exe, str(script), "--unload"],
+            cmd,
             env=env
         )
         p.wait()

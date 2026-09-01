@@ -277,3 +277,13 @@ def run_wiki_check(cfg: KnrsConfig, *, dry_run: bool = False, fix_broken_links: 
     if fix_broken_links and not dry_run:
         logger.info("Fixed %d broken link instances.", fixed_link_count)
 
+    return {
+        "checked": total_checked,
+        "updated": total_updated,
+        "duplicates": duplicate_count,
+        "broken_links": broken_link_count,
+        "fixed_links": fixed_link_count,
+        "malformed_links": malformed_count,
+        "errors": 0,
+    }
+

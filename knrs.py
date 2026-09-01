@@ -102,6 +102,11 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark_p.add_argument("--results", help="Path to write the results JSON (default: benchmark_<hostname>.json in benchmark_path).")
     benchmark_p.add_argument("--visualize", action="store_true", help="Launch the local visualization dashboard in your web browser.")
 
+    # unload
+    unload_p = subparsers.add_parser("unload", help="Unload active model from server VRAM.")
+    unload_p.add_argument("backend", nargs="?", help="Backend name (defaults to summarizer in config).")
+    unload_p.add_argument("--force", action="store_true", help="Force unload regardless of backend config.")
+
     # repl
     subparsers.add_parser("repl", help="Start the interactive REPL (default).")
 
@@ -334,6 +339,15 @@ def main() -> None:
             mock_args.extend(["--checkpoint-every-chunks", str(args.checkpoint_every_chunks)])
         
         cmd_sync(mock_args, cfg)
+        
+    elif args.command == "unload":
+        from repl.commands import cmd_unload
+        unload_args = []
+        if args.backend:
+            unload_args.append(args.backend)
+        if args.force:
+            unload_args.append("--force")
+        cmd_unload(unload_args, cfg)
 
     elif args.command == "benchmark":
         workspace_root = Path(__file__).parent.resolve()

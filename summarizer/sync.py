@@ -13,7 +13,7 @@ import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 from config import KnrsConfig
 
 import yaml
@@ -277,7 +277,7 @@ def run_summary_sync(
     *,
     dry_run: bool = False,
     concurrency: int = 1,
-) -> None:
+) -> dict[str, Any]:
     """
     Full two-phase MarkdownBook → BookSummary sync.
 
@@ -285,6 +285,9 @@ def run_summary_sync(
         cfg:              Resolved KnrsConfig.
         dry_run:          Log the plan but do not write anything.
         concurrency:      Number of parallel summariser workers.
+
+    Returns:
+        Dictionary with execution statistics (success_count, failure_count, actions, failed_items).
     """
     # ── Phase 1: Scan & Plan ──────────────────────────────────────────
     logger.info("Phase 1: Scanning existing summaries at %s", cfg.book_summaries)
@@ -306,13 +309,25 @@ def run_summary_sync(
     executable = [a for a in actions if a.action != "SKIP"]
     if not executable:
         logger.info("Nothing to do — all summaries are up to date.")
-        return
+        return {
+            "success_count": 0,
+            "failure_count": 0,
+            "total": 0,
+            "actions": counts,
+            "failed_items": [],
+        }
 
     if dry_run:
         logger.info("[dry-run] Would execute %d action(s). No files written.", len(executable))
         for a in executable:
             logger.info("  %s  %s", a.action, a.title)
-        return
+        return {
+            "success_count": len(executable),
+            "failure_count": 0,
+            "total": len(executable),
+            "actions": counts,
+            "failed_items": [],
+        }
 
     # ── Phase 2: Execute ──────────────────────────────────────────────
     logger.info("Phase 2: Executing %d action(s) (concurrency=%d)…",
@@ -322,10 +337,23 @@ def run_summary_sync(
     parallel   = [a for a in executable if a.action in ("ADD", "RESUMMARISE")]
     total      = len(executable)
     done       = 0
+    success_count = 0
+    failure_count = 0
+    failed_items: list[str] = []
 
     for a in sequential:
         done += 1
-        _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
+        try:
+            ok = _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
+            if ok:
+                success_count += 1
+            else:
+                failure_count += 1
+                failed_items.append(f"{a.action}: {a.title}")
+        except Exception as exc:
+            logger.error("Error executing %s for %s: %s", a.action, a.title, exc)
+            failure_count += 1
+            failed_items.append(f"{a.action}: {a.title} ({exc})")
 
     if parallel:
         if concurrency > 1:
@@ -338,17 +366,44 @@ def run_summary_sync(
                     for i, a in enumerate(parallel)
                 }
                 for fut in as_completed(futs):
+                    a = futs[fut]
                     exc = fut.exception()
                     if exc:
-                        logger.error("Summariser worker error: %s", exc)
+                        logger.error("Summariser worker error for %s: %s", a.title, exc)
+                        failure_count += 1
+                        failed_items.append(f"{a.action}: {a.title} ({exc})")
+                    else:
+                        ok = fut.result()
+                        if ok:
+                            success_count += 1
+                        else:
+                            failure_count += 1
+                            failed_items.append(f"{a.action}: {a.title}")
                     done += 1
         else:
             for a in parallel:
                 done += 1
-                _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
+                try:
+                    ok = _execute_summary_action(a, cfg, dry_run=False, idx=done, total=total)
+                    if ok:
+                        success_count += 1
+                    else:
+                        failure_count += 1
+                        failed_items.append(f"{a.action}: {a.title}")
+                except Exception as exc:
+                    logger.error("Error summarizing %s: %s", a.title, exc)
+                    failure_count += 1
+                    failed_items.append(f"{a.action}: {a.title} ({exc})")
         
         # Unload the model from VRAM after the last summarization task finishes.
         from summarizer.engine import unload_model
         unload_model(cfg.summarizer_name)
 
     logger.info("Summary sync complete.")
+    return {
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "total": total,
+        "actions": counts,
+        "failed_items": failed_items,
+    }

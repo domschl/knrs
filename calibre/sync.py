@@ -15,7 +15,7 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 
 import yaml
 
@@ -188,68 +188,79 @@ def _execute_action(
     dry_run: bool,
     idx: int,
     total: int,
-) -> None:
+) -> bool:
     prefix = f"[{idx}/{total}]"
 
     if action.action == "SKIP":
-        return
+        return True
 
-    elif action.action in ("ADD", "RECONVERT"):
-        verb = "ADD" if action.action == "ADD" else "RECONVERT"
-        logger.info("%s %s: %s", prefix, verb, action.title)
-        if action.action == "RECONVERT" and action.old_path and not dry_run:
-            action.old_path.unlink(missing_ok=True)
-        if action.book:
-            ok = convert_book(
-                action.book, action.target_path, dry_run=dry_run
-            )
-            if ok and not dry_run and action.book.cover_path:
-                generate_cover_icon(
-                    action.book.cover_path, cfg.book_cover_icons,
-                    action.book.uuid, dry_run=dry_run,
-                )
-
-    elif action.action == "REMOVE":
-        logger.info("%s REMOVE: %s", prefix, action.title)
-        if not dry_run:
-            if action.old_path:
+    try:
+        if action.action in ("ADD", "RECONVERT"):
+            verb = "ADD" if action.action == "ADD" else "RECONVERT"
+            logger.info("%s %s: %s", prefix, verb, action.title)
+            if action.action == "RECONVERT" and action.old_path and not dry_run:
                 action.old_path.unlink(missing_ok=True)
-                logger.debug("Removed %s", action.old_path)
-            # Also remove the icon
-            icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
-            if icon_path.exists():
-                icon_path.unlink(missing_ok=True)
-                logger.debug("Removed icon %s", icon_path)
-
-    elif action.action in ("RENAME", "MOVE"):
-        logger.info(
-            "%s %s: %s -> %s",
-            prefix, action.action,
-            action.old_path.name if action.old_path else "?",
-            action.new_path.name if action.new_path else "?",
-        )
-        if not dry_run and action.old_path and action.new_path:
-            action.new_path.parent.mkdir(parents=True, exist_ok=True)
-            action.old_path.rename(action.new_path)
             if action.book:
-                _update_meta_fields(action.new_path, action.book)
-
-    elif action.action == "UPDATE_METADATA":
-        logger.info(
-            "%s UPDATE_METADATA: %s", prefix,
-            action.old_path.name if action.old_path else action.title,
-        )
-        if not dry_run and action.old_path and action.book:
-            _update_meta_fields(action.old_path, action.book,
-                                extra={"source_hash": action.source_hash,
-                                       "source_format": action.source_format})
-            # Ensure icon exists
-            icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
-            if not icon_path.exists() and action.book.cover_path:
-                generate_cover_icon(
-                    action.book.cover_path, cfg.book_cover_icons,
-                    action.book.uuid, dry_run=False
+                ok = convert_book(
+                    action.book, action.target_path, dry_run=dry_run
                 )
+                if ok and not dry_run and action.book.cover_path:
+                    generate_cover_icon(
+                        action.book.cover_path, cfg.book_cover_icons,
+                        action.book.uuid, dry_run=dry_run,
+                    )
+                return ok
+            return False
+
+        elif action.action == "REMOVE":
+            logger.info("%s REMOVE: %s", prefix, action.title)
+            if not dry_run:
+                if action.old_path:
+                    action.old_path.unlink(missing_ok=True)
+                    logger.debug("Removed %s", action.old_path)
+                # Also remove the icon
+                icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
+                if icon_path.exists():
+                    icon_path.unlink(missing_ok=True)
+                    logger.debug("Removed icon %s", icon_path)
+            return True
+
+        elif action.action in ("RENAME", "MOVE"):
+            logger.info(
+                "%s %s: %s -> %s",
+                prefix, action.action,
+                action.old_path.name if action.old_path else "?",
+                action.new_path.name if action.new_path else "?",
+            )
+            if not dry_run and action.old_path and action.new_path:
+                action.new_path.parent.mkdir(parents=True, exist_ok=True)
+                action.old_path.rename(action.new_path)
+                if action.book:
+                    _update_meta_fields(action.new_path, action.book)
+            return True
+
+        elif action.action == "UPDATE_METADATA":
+            logger.info(
+                "%s UPDATE_METADATA: %s", prefix,
+                action.old_path.name if action.old_path else action.title,
+            )
+            if not dry_run and action.old_path and action.book:
+                _update_meta_fields(action.old_path, action.book,
+                                    extra={"source_hash": action.source_hash,
+                                           "source_format": action.source_format})
+                # Ensure icon exists
+                icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
+                if not icon_path.exists() and action.book.cover_path:
+                    generate_cover_icon(
+                        action.book.cover_path, cfg.book_cover_icons,
+                        action.book.uuid, dry_run=False
+                    )
+            return True
+
+        return True
+    except Exception as exc:
+        logger.error("Failed to execute action %s on %s: %s", action.action, action.title, exc)
+        return False
 
 
 def _update_meta_fields(md_path: Path, book: CalibreBook, extra: dict | None = None) -> None:
@@ -298,7 +309,7 @@ def run_sync(
     *,
     dry_run: bool = False,
     concurrency: int = 1,
-) -> None:
+) -> dict[str, Any]:
     """
     Full two-phase Calibre → MarkdownBooks sync.
 
@@ -306,6 +317,9 @@ def run_sync(
         cfg:                   Resolved KnrsConfig.
         dry_run:               Print the plan but do not write any files.
         concurrency:           Number of parallel conversion workers.
+
+    Returns:
+        Dictionary with execution statistics (success_count, failure_count, actions, failed_items).
     """
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
 
@@ -340,13 +354,25 @@ def run_sync(
     executable = [a for a in actions if a.action != "SKIP"]
     if not executable:
         logger.info("Nothing to do — all files are up to date.")
-        return
+        return {
+            "success_count": 0,
+            "failure_count": 0,
+            "total": 0,
+            "actions": counts,
+            "failed_items": [],
+        }
 
     if dry_run:
         logger.info("[dry-run] Would execute %d action(s). No files written.", len(executable))
         for a in executable:
             logger.info("  %s  %s", a.action, a.title)
-        return
+        return {
+            "success_count": len(executable),
+            "failure_count": 0,
+            "total": len(executable),
+            "actions": counts,
+            "failed_items": [],
+        }
 
     # ── Phase 2: Execute ──────────────────────────────────────────────
     logger.info("Phase 2: Executing %d action(s) (concurrency=%d)…",
@@ -356,11 +382,19 @@ def run_sync(
     parallel   = [a for a in executable if a.action in ("ADD", "RECONVERT")]
     total      = len(executable)
     done       = 0
+    success_count = 0
+    failure_count = 0
+    failed_items: list[str] = []
 
     # Sequential (fast) actions first
     for a in sequential:
         done += 1
-        _execute_action(a, cfg, dry_run=False, idx=done, total=total)
+        ok = _execute_action(a, cfg, dry_run=False, idx=done, total=total)
+        if ok:
+            success_count += 1
+        else:
+            failure_count += 1
+            failed_items.append(f"{a.action}: {a.title}")
 
     # Parallel conversions
     if parallel:
@@ -374,16 +408,38 @@ def run_sync(
                     for i, a in enumerate(parallel)
                 }
                 for fut in as_completed(futs):
+                    a = futs[fut]
                     exc = fut.exception()
                     if exc:
-                        logger.error("Worker error: %s", exc)
+                        logger.error("Worker error for %s: %s", a.title, exc)
+                        failure_count += 1
+                        failed_items.append(f"{a.action}: {a.title} ({exc})")
+                    else:
+                        ok = fut.result()
+                        if ok:
+                            success_count += 1
+                        else:
+                            failure_count += 1
+                            failed_items.append(f"{a.action}: {a.title}")
                     done += 1
         else:
             for a in parallel:
                 done += 1
-                _execute_action(a, cfg, dry_run=False, idx=done, total=total)
+                ok = _execute_action(a, cfg, dry_run=False, idx=done, total=total)
+                if ok:
+                    success_count += 1
+                else:
+                    failure_count += 1
+                    failed_items.append(f"{a.action}: {a.title}")
 
     # Cleanup debris icons
     _cleanup_icon_debris(cfg.book_cover_icons, set(calibre_index.keys()), dry_run=dry_run)
 
     logger.info("Sync complete.")
+    return {
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "total": total,
+        "actions": counts,
+        "failed_items": failed_items,
+    }

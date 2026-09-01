@@ -11,6 +11,7 @@ from typing import Any, TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
+from rich.markup import escape
 
 from config import KnrsConfig
 from utils.syncthing import get_syncthing_status
@@ -103,6 +104,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     table.add_row(r"/index \[--force]", "Update VectorDB index")
     table.add_row("/config", "Show current configuration")
     table.add_row("/sync-status", "Check Syncthing synchronization status")
+    table.add_row(r"/unload \[backend] \[--force]", "Unload model from server VRAM")
     table.add_row("/backends", "List available backends")
     table.add_row("/models <backend>", "List models for a backend")
     table.add_row("/set-backend <type> <backend>", "Set the active backend")
@@ -111,53 +113,56 @@ def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     
     console.print(table)
 
-def cmd_sync_calibre(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_sync_calibre(args: list[str], cfg: KnrsConfig) -> dict[str, Any] | None:
     from calibre.sync import run_sync
     dry_run = "--dry-run" in args
     force = "--force" in args
     if not dry_run and not force and not GIT_STATE["knrs_data_safe_local"]:
         console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
-    run_sync(cfg, dry_run=dry_run)
+        return None
+    return run_sync(cfg, dry_run=dry_run)
 
-def cmd_sync_summaries(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_sync_summaries(args: list[str], cfg: KnrsConfig) -> dict[str, Any] | None:
     from summarizer.sync import run_summary_sync
     dry_run = "--dry-run" in args
     force = "--force" in args
     if not dry_run and not force and not GIT_STATE["knrs_data_safe_local"]:
         console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
-    run_summary_sync(cfg, dry_run=dry_run)
+        return None
+    return run_summary_sync(cfg, dry_run=dry_run)
 
-def cmd_sync_wiki(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_sync_wiki(args: list[str], cfg: KnrsConfig) -> dict[str, Any] | None:
     from wiki.sync import run_wiki_sync, inject_frontmatter_in_notes
     force = "--force" in args
     if not force and not GIT_STATE["wiki_path_safe_local"]:
         console.print(f"[red]Safety check blocked: {cfg.wiki_path} is a git repo but not up-to-date.[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
     logger.info("Injecting missing frontmatter into Notes...")
     count = inject_frontmatter_in_notes(cfg.notes_path, cfg.wiki_path)
     logger.info("Updated %d files.", count)
-    run_wiki_sync(cfg)
+    res = run_wiki_sync(cfg)
+    if res:
+        res["frontmatter_updated"] = count
+    return res
 
-def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_sync_external_lib(args: list[str], cfg: KnrsConfig) -> dict[str, Any]:
     from external_lib.sync import run_external_sync
     dry_run = "--dry-run" in args
-    run_external_sync(cfg, dry_run=dry_run)
+    return run_external_sync(cfg, dry_run=dry_run)
 
-def cmd_wiki_check(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_wiki_check(args: list[str], cfg: KnrsConfig) -> dict[str, Any] | None:
     from wiki.checker import run_wiki_check
     dry_run = "--dry-run" in args
     force = "--force" in args
     if not dry_run and not force and not GIT_STATE["wiki_path_safe_local"]:
         console.print(f"[red]Safety check blocked: {cfg.wiki_path} is a git repo but not up-to-date.[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
     fix_broken_links = "--broken-links-to-italics" in args
-    run_wiki_check(cfg, dry_run=dry_run, fix_broken_links=fix_broken_links)
+    return run_wiki_check(cfg, dry_run=dry_run, fix_broken_links=fix_broken_links)
 
 def cmd_organize(args: list[str], cfg: KnrsConfig) -> None:
     """Restructure the AINotes/Research/ directory hierarchically by calling LLM classification."""
@@ -232,10 +237,10 @@ def cmd_timeline(args: list[str], cfg: KnrsConfig) -> None:
     if not force and not GIT_STATE["knrs_data_safe_local"]:
         console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date.[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
         
     output_file = cfg.timelines / "timelines.json"
-    run_extraction(cfg.notes_path, output_file)
+    res = run_extraction(cfg.notes_path, output_file)
     
     # If any filter or raw is provided, show the timeline
     if start_year is not None or end_year is not None or context_filters or keywords or raw:
@@ -248,19 +253,20 @@ def cmd_timeline(args: list[str], cfg: KnrsConfig) -> None:
             keywords=keywords,
             raw=raw
         )
+    return res
 
-def cmd_index(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_index(args: list[str], cfg: KnrsConfig) -> dict[str, Any] | None:
     from vector.indexer import KnrsIndexer
     force = "--force" in args
     
     if not force and not GIT_STATE["knrs_data_safe_remote"]:
         console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date (remote check enabled).[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
     if not force and not GIT_STATE["wiki_path_safe_remote"]:
         console.print(f"[red]Safety check blocked: {cfg.wiki_path} is a git repo but not up-to-date (remote check enabled).[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
 
     checkpoint_every_docs = None
     if "--checkpoint-every-docs" in args:
@@ -269,7 +275,7 @@ def cmd_index(args: list[str], cfg: KnrsConfig) -> None:
             checkpoint_every_docs = int(args[idx + 1])
         except (IndexError, ValueError):
             console.print("[red]--checkpoint-every-docs requires an integer argument[/red]")
-            return
+            return None
 
     checkpoint_every_chunks = None
     if "--checkpoint-every-chunks" in args:
@@ -278,9 +284,9 @@ def cmd_index(args: list[str], cfg: KnrsConfig) -> None:
             checkpoint_every_chunks = int(args[idx + 1])
         except (IndexError, ValueError):
             console.print("[red]--checkpoint-every-chunks requires an integer argument[/red]")
-            return
+            return None
 
-    KnrsIndexer(cfg).run_indexing(
+    return KnrsIndexer(cfg).run_indexing(
         cfg.markdown_books, cfg.wiki_path,
         force=force, 
         checkpoint_every_docs=checkpoint_every_docs,
@@ -408,11 +414,14 @@ def cmd_search(args: list[str], cfg: KnrsConfig) -> None:
     except FileNotFoundError:
         console.print("[red]Error: Index not found. Run /index first.[/red]")
 
-def cmd_sync_git(args: list[str], cfg: KnrsConfig) -> None:
+def cmd_sync_git(args: list[str], cfg: KnrsConfig) -> dict[str, Any]:
     from paths import is_git_repo
     import subprocess
     
     commit_msg = " ".join(args) if args else "Automated sync via knrs /sync-git"
+    success_repos = 0
+    failed_repos = 0
+    errors: list[str] = []
     
     for name, path in [("wiki_path", cfg.wiki_path), ("knrs_data", cfg.knrs_data)]:
         path_str = str(path)
@@ -469,67 +478,330 @@ def cmd_sync_git(args: list[str], cfg: KnrsConfig) -> None:
             pull_result = subprocess.run(["git", "pull", "--no-rebase", "--no-edit"], cwd=path_str, capture_output=True, text=True)
                 
             if pull_result.returncode != 0:
-                console.print(f"[red]Failed to pull changes for {name}. You might have conflicts. Details:\n{pull_result.stderr}[/red]")
+                err = f"Failed to pull changes for {name}: {pull_result.stderr.strip()}"
+                console.print(f"[red]{err}[/red]")
+                failed_repos += 1
+                errors.append(err)
                 continue
                 
             # 4. git push
             console.print(f"[dim]Pushing changes to remote for {name}...[/dim]")
             push_result = subprocess.run(["git", "push"], cwd=path_str, capture_output=True, text=True)
             if push_result.returncode != 0:
-                console.print(f"[red]Failed to push changes for {name}. Details:\n{push_result.stderr}[/red]")
+                err = f"Failed to push changes for {name}: {push_result.stderr.strip()}"
+                console.print(f"[red]{err}[/red]")
+                failed_repos += 1
+                errors.append(err)
                 continue
                 
             console.print(f"[bold green]Successfully synced {name}![/bold green]")
+            success_repos += 1
             
             # Unblock in GIT_STATE
             GIT_STATE[f"{name}_safe_local"] = True
             GIT_STATE[f"{name}_safe_remote"] = True
             
         except subprocess.CalledProcessError as e:
-            console.print(f"[red]Error executing git command in {name}: {e}[/red]")
+            err = f"Error executing git command in {name}: {e}"
+            console.print(f"[red]{err}[/red]")
+            failed_repos += 1
+            errors.append(err)
+        except Exception as e:
+            err = f"Error syncing {name}: {e}"
+            console.print(f"[red]{err}[/red]")
+            failed_repos += 1
+            errors.append(err)
 
-def cmd_sync(args: list[str], cfg: KnrsConfig) -> None:
+    return {
+        "repos_synced": success_repos,
+        "repos_failed": failed_repos,
+        "errors": errors,
+    }
+
+def cmd_unload(args: list[str], cfg: KnrsConfig) -> None:
+    """Explicitly unload the active summarizer model from VRAM."""
+    from summarizer.engine import unload_model
+    backend_name = args[0] if args and not args[0].startswith("--") else cfg.summarizer_name
+    force = "--force" in args or True  # Explicit invocation unloads model
+    console.print(f"[bold blue]Requesting unload of model for backend '{backend_name}'...[/bold blue]")
+    ok = unload_model(backend_name, force=force)
+    if ok:
+        console.print("[bold green]Model unloaded successfully.[/bold green]")
+    else:
+        console.print("[yellow]Model unload failed or backend does not support unload.[/yellow]")
+
+def cmd_sync(args: list[str], cfg: KnrsConfig) -> dict[str, Any] | None:
     force = "--force" in args
     
     if not force and not GIT_STATE["knrs_data_safe_remote"]:
         console.print(f"[red]Safety check blocked: {cfg.knrs_data} is a git repo but not up-to-date (remote check enabled).[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
     if not force and not GIT_STATE["wiki_path_safe_remote"]:
         console.print(f"[red]Safety check blocked: {cfg.wiki_path} is a git repo but not up-to-date (remote check enabled).[/red]")
         console.print("[yellow]Use --force to override.[/yellow]")
-        return
+        return None
 
     console.print("[bold blue]Executing full sync pipeline...[/bold blue]")
     
-    total_steps = 8 if getattr(cfg, "auto_git_sync", True) else 7
-    
-    console.print(f"\n[bold cyan]1/{total_steps}: Running /sync-calibre[/bold cyan]")
-    cmd_sync_calibre(args, cfg)
-    
-    console.print(f"\n[bold cyan]2/{total_steps}: Running /sync-summaries[/bold cyan]")
-    cmd_sync_summaries(args, cfg)
-    
-    console.print(f"\n[bold cyan]3/{total_steps}: Running /sync-wiki[/bold cyan]")
-    cmd_sync_wiki(args, cfg)
-    
-    console.print(f"\n[bold cyan]4/{total_steps}: Running /check-wiki[/bold cyan]")
-    cmd_wiki_check(args, cfg)
-    
-    console.print(f"\n[bold cyan]5/{total_steps}: Running /timeline[/bold cyan]")
-    cmd_timeline(args, cfg)
-    
-    console.print(f"\n[bold cyan]6/{total_steps}: Running /index[/bold cyan]")
-    cmd_index(args, cfg)
-    
-    console.print(f"\n[bold cyan]7/{total_steps}: Running /sync-external-lib[/bold cyan]")
-    cmd_sync_external_lib(args, cfg)
-    
-    if getattr(cfg, "auto_git_sync", True):
-        console.print(f"\n[bold cyan]8/{total_steps}: Running /sync-git (auto_git_sync enabled)[/bold cyan]")
-        cmd_sync_git([], cfg)
-    
-    console.print("\n[bold green]Full sync pipeline completed![/bold green]")
+    auto_git = getattr(cfg, "auto_git_sync", True)
+    total_steps = 8 if auto_git else 7
+    step_records: list[dict[str, Any]] = []
+
+    def _run_step(
+        step_num: int,
+        name: str,
+        cmd_str: str,
+        runner_fn,
+        parse_result_fn,
+    ) -> None:
+        console.print(f"\n[bold cyan]{step_num}/{total_steps}: Running {cmd_str}[/bold cyan]")
+        try:
+            raw_res = runner_fn()
+            rec = parse_result_fn(raw_res)
+            rec["step_num"] = step_num
+            rec["name"] = name
+            rec["command"] = cmd_str
+            step_records.append(rec)
+        except Exception as exc:
+            logger.exception(f"Unexpected error in {cmd_str}: {exc}")
+            console.print(f"[bold red]Unexpected error in {cmd_str}: {exc}[/bold red]")
+            step_records.append({
+                "step_num": step_num,
+                "name": name,
+                "command": cmd_str,
+                "status": "Failed",
+                "success_count": 0,
+                "fault_count": 1,
+                "details": f"Exception: {exc}",
+                "errors": [str(exc)],
+            })
+
+    # Step 1: /sync-calibre
+    def _parse_calibre(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Blocked", "success_count": 0, "fault_count": 0, "details": "Blocked by safety check", "errors": ["Blocked by git safety check"]}
+        f = res.get("failure_count", 0)
+        s = res.get("success_count", 0)
+        t = res.get("total", 0)
+        counts = res.get("actions", {})
+        act_str = ", ".join(f"{cnt} {k.lower()}" for k, cnt in counts.items() if k != "SKIP" and cnt > 0)
+        details = act_str if act_str else ("All files up to date" if t == 0 else f"{s}/{t} actions applied")
+        status = "Failed" if f > 0 else "OK"
+        return {"status": status, "success_count": s, "fault_count": f, "details": details, "errors": res.get("failed_items", [])}
+
+    _run_step(1, "Calibre Sync", "/sync-calibre", lambda: cmd_sync_calibre(args, cfg), _parse_calibre)
+
+    # Step 2: /sync-summaries
+    def _parse_summaries(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Blocked", "success_count": 0, "fault_count": 0, "details": "Blocked by safety check", "errors": ["Blocked by git safety check"]}
+        f = res.get("failure_count", 0)
+        s = res.get("success_count", 0)
+        t = res.get("total", 0)
+        counts = res.get("actions", {})
+        act_str = ", ".join(f"{cnt} {k.lower()}" for k, cnt in counts.items() if k != "SKIP" and cnt > 0)
+        details = act_str if act_str else ("All summaries up to date" if t == 0 else f"{s}/{t} actions applied")
+        status = "Failed" if f > 0 else "OK"
+        return {"status": status, "success_count": s, "fault_count": f, "details": details, "errors": res.get("failed_items", [])}
+
+    _run_step(2, "Book Summaries", "/sync-summaries", lambda: cmd_sync_summaries(args, cfg), _parse_summaries)
+
+    # Step 3: /sync-wiki
+    def _parse_wiki(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Blocked", "success_count": 0, "fault_count": 0, "details": "Blocked by safety check", "errors": ["Blocked by git safety check"]}
+        f = res.get("failure_count", 0)
+        s = res.get("success_count", 0)
+        t = res.get("total", 0)
+        fm_count = res.get("frontmatter_updated", 0)
+        details_parts = []
+        if fm_count > 0:
+            details_parts.append(f"{fm_count} frontmatter injected")
+        if s > 0:
+            details_parts.append(f"{s} pages synced")
+        if not details_parts:
+            details_parts.append("All wiki pages up to date" if t == 0 else f"{s}/{t} actions applied")
+        details = ", ".join(details_parts)
+        status = "Failed" if f > 0 else "OK"
+        return {"status": status, "success_count": s, "fault_count": f, "details": details, "errors": res.get("failed_items", [])}
+
+    _run_step(3, "Wiki Sync", "/sync-wiki", lambda: cmd_sync_wiki(args, cfg), _parse_wiki)
+
+    # Step 4: /check-wiki
+    def _parse_wiki_check(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Blocked", "success_count": 0, "fault_count": 0, "details": "Blocked by safety check", "errors": ["Blocked by git safety check"]}
+        c = res.get("checked", 0)
+        u = res.get("updated", 0)
+        d = res.get("duplicates", 0)
+        b = res.get("broken_links", 0)
+        fl = res.get("fixed_links", 0)
+        m = res.get("malformed_links", 0)
+        e = res.get("errors", 0)
+        
+        issue_parts = []
+        if b > 0:
+            issue_parts.append(f"{b} broken links ({fl} fixed)" if fl > 0 else f"{b} broken links")
+        if d > 0:
+            issue_parts.append(f"{d} duplicates")
+        if m > 0:
+            issue_parts.append(f"{m} malformed")
+        
+        details = f"Checked {c} files"
+        if u > 0:
+            details += f", updated {u}"
+        if issue_parts:
+            details += f" ({', '.join(issue_parts)})"
+            
+        unfixed_issues = (b - fl) + d + m + e
+        if e > 0:
+            status = "Failed"
+            fault_count = e
+        elif unfixed_issues > 0:
+            status = "Warning"
+            fault_count = 0
+        else:
+            status = "OK"
+            fault_count = 0
+            
+        errors = []
+        if b - fl > 0:
+            errors.append(f"{b - fl} unresolved broken wiki link(s)")
+        if d > 0:
+            errors.append(f"{d} duplicate document name(s)")
+        if m > 0:
+            errors.append(f"{m} malformed wiki link(s)")
+            
+        return {"status": status, "success_count": c, "fault_count": fault_count, "details": details, "errors": errors}
+
+    _run_step(4, "Wiki Check", "/check-wiki", lambda: cmd_wiki_check(args, cfg), _parse_wiki_check)
+
+    # Step 5: /timeline
+    def _parse_timeline(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Blocked", "success_count": 0, "fault_count": 0, "details": "Blocked by safety check", "errors": ["Blocked by git safety check"]}
+        fs = res.get("files_scanned", 0)
+        ev = res.get("events_extracted", 0)
+        f = res.get("failure_count", 0)
+        status = "Failed" if f > 0 else "OK"
+        details = f"{ev} events extracted from {fs} files"
+        return {"status": status, "success_count": ev, "fault_count": f, "details": details, "errors": res.get("failed_items", [])}
+
+    _run_step(5, "Timelines", "/timeline", lambda: cmd_timeline(args, cfg), _parse_timeline)
+
+    # Step 6: /index
+    def _parse_index(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Blocked", "success_count": 0, "fault_count": 0, "details": "Blocked by safety check", "errors": ["Blocked by git safety check"]}
+        fi = res.get("files_indexed", 0)
+        ff = res.get("files_failed", 0)
+        ci = res.get("chunks_indexed", 0)
+        tc = res.get("total_chunks", 0)
+        tf = res.get("total_files", 0)
+        if fi == 0 and ff == 0:
+            details = f"Index up to date ({tc} chunks across {tf} files)"
+        else:
+            details = f"{fi} files indexed ({ci} chunks, {tc} total)"
+        status = "Failed" if ff > 0 else "OK"
+        return {"status": status, "success_count": fi, "fault_count": ff, "details": details, "errors": res.get("failed_items", [])}
+
+    _run_step(6, "Vector Index", "/index", lambda: cmd_index(args, cfg), _parse_index)
+
+    # Step 7: /sync-external-lib
+    def _parse_ext_lib(res: dict[str, Any] | None) -> dict[str, Any]:
+        if res is None:
+            return {"status": "Failed", "success_count": 0, "fault_count": 1, "details": "Failed to run", "errors": ["Failed to run"]}
+        f = res.get("failure_count", 0)
+        s = res.get("success_count", 0)
+        t = res.get("total", 0)
+        cp = res.get("copied", 0)
+        up = res.get("updated", 0)
+        rf = res.get("removed_files", 0)
+        if t == 0 and f == 0:
+            details = "All external files up to date"
+        else:
+            parts = []
+            if cp > 0: parts.append(f"{cp} copied")
+            if up > 0: parts.append(f"{up} updated")
+            if rf > 0: parts.append(f"{rf} removed")
+            details = ", ".join(parts) if parts else f"{s} actions completed"
+        status = "Failed" if f > 0 else "OK"
+        return {"status": status, "success_count": s, "fault_count": f, "details": details, "errors": res.get("failed_items", [])}
+
+    _run_step(7, "External Library", "/sync-external-lib", lambda: cmd_sync_external_lib(args, cfg), _parse_ext_lib)
+
+    # Step 8: /sync-git
+    if auto_git:
+        def _parse_git(res: dict[str, Any] | None) -> dict[str, Any]:
+            if res is None:
+                return {"status": "Failed", "success_count": 0, "fault_count": 1, "details": "Failed", "errors": ["Git sync failed"]}
+            s = res.get("repos_synced", 0)
+            f = res.get("repos_failed", 0)
+            status = "Failed" if f > 0 else "OK"
+            details = f"{s} repo(s) synced" if f == 0 else f"{s} repo(s) synced, {f} failed"
+            return {"status": status, "success_count": s, "fault_count": f, "details": details, "errors": res.get("errors", [])}
+
+        _run_step(8, "Git Sync", "/sync-git", lambda: cmd_sync_git([], cfg), _parse_git)
+
+    # Display Summary Table
+    console.print("\n")
+    table = Table(title="Full Sync Pipeline Summary", show_lines=True)
+    table.add_column("Step", style="bold")
+    table.add_column("Command", style="cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("Success", justify="right")
+    table.add_column("Faults", justify="right")
+    table.add_column("Details")
+
+    total_faults = 0
+    total_warnings = 0
+    all_errors: list[tuple[str, str]] = []
+
+    for rec in step_records:
+        st = rec["status"]
+        if st == "OK":
+            st_formatted = "[bold green]OK[/bold green]"
+        elif st == "Warning":
+            st_formatted = "[bold yellow]Warning[/bold yellow]"
+            total_warnings += 1
+        elif st == "Blocked":
+            st_formatted = "[bold magenta]Blocked[/bold magenta]"
+        else:
+            st_formatted = "[bold red]FAILED[/bold red]"
+
+        faults = rec["fault_count"]
+        total_faults += faults
+        faults_str = f"[bold red]{faults}[/bold red]" if faults > 0 else "[green]0[/green]"
+        
+        table.add_row(
+            f"{rec['step_num']}. {rec['name']}",
+            rec["command"],
+            st_formatted,
+            str(rec["success_count"]),
+            faults_str,
+            rec["details"],
+        )
+        for err in rec.get("errors", []):
+            if st != "OK" or faults > 0:
+                all_errors.append((rec["command"], err))
+
+    console.print(table)
+
+    if total_faults > 0:
+        console.print(f"\n[bold red]⚠ Pipeline completed with {total_faults} fault(s):[/bold red]")
+        for cmd_name, err in all_errors:
+            console.print(f"  [red]• \\[{escape(cmd_name)}\\] {escape(str(err))}[/red]")
+    elif total_warnings > 0:
+        console.print("\n[bold yellow]Pipeline completed with warnings (see details above).[/bold yellow]")
+    else:
+        console.print("\n[bold green]Full sync pipeline completed successfully with 0 faults![/bold green]")
+
+    return {
+        "total_faults": total_faults,
+        "total_warnings": total_warnings,
+        "steps": step_records,
+    }
 
 def cmd_config(args: list[str], cfg: KnrsConfig) -> None:
     from config import print_config
@@ -882,4 +1154,5 @@ COMMANDS = {
     "/load-session": cmd_load_session,
     "/research-list": cmd_research_list,
     "/sync-status": cmd_syncthing_status,
+    "/unload": cmd_unload,
 }

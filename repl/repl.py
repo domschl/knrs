@@ -15,6 +15,9 @@ from rich.markdown import Markdown
 from config import KnrsConfig
 from paths import knrs_history_file
 from repl.commands import COMMANDS
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from agent.agent import ResearchAgent
 
 logger = logging.getLogger(__name__)
 console = Console()

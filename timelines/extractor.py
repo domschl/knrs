@@ -12,6 +12,7 @@ import logging
 import re
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Any
 
 from timelines.indra_time import parse_interval, format_point
 
@@ -134,14 +135,21 @@ def extract_from_file(path: Path, notes_root: Path) -> list[TimelineEvent]:
             
     return events
 
-def run_extraction(notes_path: Path, output_file: Path) -> None:
+def run_extraction(notes_path: Path, output_file: Path) -> dict[str, Any]:
     """Scan notes_path for timelines and save to output_file."""
     all_events = []
     logger.info("Scanning %s for timelines...", notes_path)
+    files_scanned = 0
+    errors: list[str] = []
     
     for md_path in notes_path.rglob("*.md"):
-        events = extract_from_file(md_path, notes_path)
-        all_events.extend(events)
+        files_scanned += 1
+        try:
+            events = extract_from_file(md_path, notes_path)
+            all_events.extend(events)
+        except Exception as e:
+            logger.error("Error extracting from %s: %s", md_path, e)
+            errors.append(f"{md_path.name}: {e}")
         
     if not all_events:
         logger.info("No timeline events found.")
@@ -149,7 +157,12 @@ def run_extraction(notes_path: Path, output_file: Path) -> None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         with output_file.open('w', encoding='utf-8') as f:
             json.dump([], f)
-        return
+        return {
+            "files_scanned": files_scanned,
+            "events_extracted": 0,
+            "failure_count": len(errors),
+            "failed_items": errors,
+        }
 
     # Sort by start_year, then end_year
     all_events.sort(key=lambda x: (x.start_year, x.end_year))
@@ -158,6 +171,13 @@ def run_extraction(notes_path: Path, output_file: Path) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w', encoding='utf-8') as f:
         json.dump([e.to_dict() for e in all_events], f, indent=2)
+
+    return {
+        "files_scanned": files_scanned,
+        "events_extracted": len(all_events),
+        "failure_count": len(errors),
+        "failed_items": errors,
+    }
 
 def show_timeline(
     output_file: Path,

@@ -191,8 +191,6 @@ def summarize_file(source_file: str, destination_file: str, config: dict[str, An
         os.replace(temp_file, destination_file)
             
         logger.info(f"Successfully wrote summary to: {destination_file}")
-        if config.get("auto_unload_model", DEFAULT_LOCAL_CONFIG["auto_unload_model"]):
-            engine.unload()
         sys.exit(0)
     except Exception as e:
         logger.exception(f"Error during summarization: {e}")
@@ -242,17 +240,23 @@ def main() -> None:
     parser.add_argument("--summary_max_tokens", type=int, help="Max tokens for the final summary.", default=None)
     parser.add_argument("--capabilities", action="store_true", help="Print backend capabilities as JSON")
     parser.add_argument("--unload", action="store_true", help="Unload the active model from llama.cpp server and exit")
+    parser.add_argument("--force", action="store_true", help="Force unload even if auto_unload_model is False in config")
     args = parser.parse_args()
     
     server_config = get_llm_server_config()
     
     if args.unload:
         config = get_platform_config("summarizer_config_api.json", DEFAULT_LOCAL_CONFIG)
+        if not config.get("auto_unload_model", DEFAULT_LOCAL_CONFIG["auto_unload_model"]) and not args.force:
+            logger.info("auto_unload_model is False, skipping unload.")
+            sys.exit(0)
+            return
         engine = ApiEngine(server_config, config)
         if engine.unload():
             sys.exit(0)
         else:
             sys.exit(1)
+        return
             
     if args.capabilities:
         url: str = server_config.get("url", "http://localhost:8180").rstrip("/")
@@ -287,6 +291,7 @@ def main() -> None:
         import json
         print(json.dumps(cap))
         sys.exit(0)
+        return
         
     if not args.source or not args.destination:
         parser.error("source and destination are required unless --capabilities or --unload is passed")

@@ -11,7 +11,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 
 import yaml
 
@@ -184,7 +184,7 @@ def plan_wiki_sync(
             
     return actions
 
-def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> None:
+def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> dict[str, Any]:
     """Full KnrsData -> Wiki/AINotes sync orchestrator."""
     from calibre.library import scan_existing_markdowns
     from summarizer.sync import scan_existing_summaries
@@ -196,12 +196,13 @@ def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> None:
     logger.info("Scanning existing AINotes...")
     existing_wiki = {}
     for md_path in cfg.ai_notes_books.rglob("*.md"):
-        content = md_path.read_text(encoding="utf-8")
-        fm_raw, _ = _split_frontmatter(content)
         try:
+            content = md_path.read_text(encoding="utf-8")
+            fm_raw, _ = _split_frontmatter(content)
             meta = yaml.safe_load(fm_raw)
-            uid = meta.get('uuid')
-            if uid: existing_wiki[uid] = md_path
+            if isinstance(meta, dict):
+                uid = meta.get('uuid')
+                if uid: existing_wiki[uid] = md_path
         except Exception:
             continue
             
@@ -214,58 +215,93 @@ def run_wiki_sync(cfg: KnrsConfig, dry_run: bool = False) -> None:
     logger.info("Wiki Sync Plan: ADD=%d, UPDATE=%d, REMOVE=%d (SKIP=%d)",
                 counts['ADD'], counts['UPDATE'], counts['REMOVE'], counts['SKIP'])
     
+    executable = [a for a in actions if a.action != "SKIP"]
+    if not executable:
+        return {
+            "success_count": 0,
+            "failure_count": 0,
+            "total": 0,
+            "actions": counts,
+            "failed_items": [],
+        }
+
     if dry_run:
-        return
+        return {
+            "success_count": len(executable),
+            "failure_count": 0,
+            "total": len(executable),
+            "actions": counts,
+            "failed_items": [],
+        }
         
     rename_map: dict[str, str] = {}
+    success_count = 0
+    failure_count = 0
+    failed_items: list[str] = []
         
     for a in actions:
         if a.action == "SKIP": continue
         
-        if a.action == "REMOVE":
-            a.target_path.unlink()
-            logger.info("Removed %s", a.target_path.name)
-            continue
-            
-        # ADD or UPDATE
-        mi_fm, _ = _split_frontmatter(a.source_book.read_text(encoding="utf-8"))
-        si_fm, si_body = _split_frontmatter(a.source_summary.read_text(encoding="utf-8"))
-        
         try:
-            metadata = yaml.safe_load(mi_fm)
-        except Exception:
-            logger.error("Failed to parse metadata for %s", a.source_book)
-            continue
-            
-        # Copy cover icon to AINotes/Books/Covers and calculate relative path
-        src_icon = cfg.book_cover_icons / f"{a.uuid}.jpg"
-        if src_icon.exists():
-            dst_icon = cfg.ai_notes_books / "Covers" / f"{a.uuid}.jpg"
-            dst_icon.parent.mkdir(parents=True, exist_ok=True)
-            if not dst_icon.exists() or dst_icon.stat().st_mtime < src_icon.stat().st_mtime:
-                import shutil
-                shutil.copy2(src_icon, dst_icon)
-            
-            import os
-            try:
-                icon_rel = Path(os.path.relpath(dst_icon, a.target_path.parent))
-            except ValueError:
-                icon_rel = dst_icon
-        else:
-            icon_rel = None
-            
-        calibre_hex_name = "".join([hex(ord(c))[2:] for c in cfg.calibre_library_name])
-        content = assemble_wiki_page(metadata, si_body, icon_rel, calibre_hex_name)
-        
-        # If we moved/renamed, remove old
-        if a.action == "UPDATE":
-            existing_path = existing_wiki.get(a.uuid)
-            if existing_path and existing_path != a.target_path:
-                rename_map[existing_path.stem] = a.target_path.stem
-                existing_path.unlink()
+            if a.action == "REMOVE":
+                a.target_path.unlink(missing_ok=True)
+                logger.info("Removed %s", a.target_path.name)
+                success_count += 1
+                continue
                 
-        atomic_write(a.target_path, content)
-        logger.info("%s %s", a.action, a.target_path.name)
+            # ADD or UPDATE
+            mi_fm, _ = _split_frontmatter(a.source_book.read_text(encoding="utf-8"))
+            si_fm, si_body = _split_frontmatter(a.source_summary.read_text(encoding="utf-8"))
+            
+            metadata = yaml.safe_load(mi_fm)
+            if not isinstance(metadata, dict):
+                logger.error("Failed to parse metadata for %s", a.source_book)
+                failure_count += 1
+                failed_items.append(f"{a.action}: {a.title} (invalid frontmatter)")
+                continue
+                
+            # Copy cover icon to AINotes/Books/Covers and calculate relative path
+            src_icon = cfg.book_cover_icons / f"{a.uuid}.jpg"
+            if src_icon.exists():
+                dst_icon = cfg.ai_notes_books / "Covers" / f"{a.uuid}.jpg"
+                dst_icon.parent.mkdir(parents=True, exist_ok=True)
+                if not dst_icon.exists() or dst_icon.stat().st_mtime < src_icon.stat().st_mtime:
+                    import shutil
+                    shutil.copy2(src_icon, dst_icon)
+                
+                import os
+                try:
+                    icon_rel = Path(os.path.relpath(dst_icon, a.target_path.parent))
+                except ValueError:
+                    icon_rel = dst_icon
+            else:
+                icon_rel = None
+                
+            calibre_hex_name = "".join([hex(ord(c))[2:] for c in cfg.calibre_library_name])
+            content = assemble_wiki_page(metadata, si_body, icon_rel, calibre_hex_name)
+            
+            # If we moved/renamed, remove old
+            if a.action == "UPDATE":
+                existing_path = existing_wiki.get(a.uuid)
+                if existing_path and existing_path != a.target_path:
+                    rename_map[existing_path.stem] = a.target_path.stem
+                    existing_path.unlink(missing_ok=True)
+                    
+            atomic_write(a.target_path, content)
+            logger.info("%s %s", a.action, a.target_path.name)
+            success_count += 1
+        except Exception as exc:
+            logger.error("Error executing wiki action %s for %s: %s", a.action, a.title, exc)
+            failure_count += 1
+            failed_items.append(f"{a.action}: {a.title} ({exc})")
         
     if rename_map and not dry_run:
         update_wikilinks(cfg.wiki_path, rename_map, dry_run=False)
+
+    return {
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "total": len(executable),
+        "actions": counts,
+        "failed_items": failed_items,
+    }

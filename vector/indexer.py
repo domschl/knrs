@@ -320,7 +320,15 @@ class KnrsIndexer:
         # ── 6. Per-file embedding with a persistent subprocess session ──
         if not to_embed:
             logger.info("Index is up to date — nothing to embed.")
-            return
+            return {
+                "files_indexed": 0,
+                "files_failed": 0,
+                "chunks_indexed": 0,
+                "total_chunks": len(meta["chunks"]),
+                "total_files": len(meta["file_hashes"]),
+                "pruned_chunks": len(to_prune),
+                "failed_items": [],
+            }
 
         total_files     = len(to_embed)
         grand_total     = len(current_hashes)
@@ -379,6 +387,10 @@ class KnrsIndexer:
         # loaded in GPU memory for all files.  Each session.embed() call
         # sends one file's chunks via a temp file + stdin, so memory usage
         # is bounded by the largest single file, not the whole corpus.
+        success_count = 0
+        failed_items: list[str] = []
+        new_chunks_count = 0
+
         with EmbedderSession(self.config) as session:
             with Progress(*progress_columns, refresh_per_second=4) as progress:
                 task = progress.add_task(
@@ -428,6 +440,7 @@ class KnrsIndexer:
                                     "text":        chunk[:200] + "...",
                                 })
                                 meta["full_texts"].append(chunk)
+                            new_chunks_count += len(chunks)
                         else:
                             # Empty file or too small, just advance by 1 if we are in fallback mode
                             if total_chunks == total_files:
@@ -436,8 +449,11 @@ class KnrsIndexer:
                         if key in current_hashes:
                             meta["file_hashes"][key] = current_hashes[key]
 
+                        success_count += 1
+
                     except Exception as exc:
                         logger.error("Failed to process %s: %s", key, exc)
+                        failed_items.append(f"{key}: {exc}")
 
                     # ── Checkpoint every N files OR every M chunks ──────────
                     if (file_num % checkpoint_every_docs == 0 or 
@@ -458,3 +474,11 @@ class KnrsIndexer:
             "Indexing complete: %d total chunks across %d files in %s",
             len(meta["chunks"]), len(meta["file_hashes"]), self.db_dir,
         )
+        return {
+            "files_indexed": success_count,
+            "files_failed": len(failed_items),
+            "chunks_indexed": new_chunks_count,
+            "total_chunks": len(meta["chunks"]),
+            "total_files": len(meta["file_hashes"]),
+            "failed_items": failed_items,
+        }

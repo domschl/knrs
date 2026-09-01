@@ -8,6 +8,7 @@ import logging
 import shutil
 import unicodedata
 from pathlib import Path
+from typing import Any
 
 from calibre.library import scan_calibre_library
 from config import KnrsConfig
@@ -25,7 +26,7 @@ def _find_book_files(book_dir: Path) -> list[Path]:
         found.append(files[".pdf"])
     return found
 
-def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
+def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> dict[str, Any]:
     """
     Sync EPUB/PDF files from Calibre to the external library.
     Target format: <external_library>/<series>/<Author> - <Title>.<ext>
@@ -33,7 +34,16 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
     if not cfg.external_library.exists():
         logger.warning("External library directory does not exist: %s", cfg.external_library)
         logger.warning("Aborting /sync-external-lib.")
-        return
+        return {
+            "success_count": 0,
+            "failure_count": 0,
+            "total": 0,
+            "copied": 0,
+            "updated": 0,
+            "removed_files": 0,
+            "removed_dirs": 0,
+            "failed_items": ["External library directory does not exist"],
+        }
 
     logger.info("Scanning Calibre library at %s", cfg.calibre_path)
     calibre_index = scan_calibre_library(cfg.calibre_path, cfg.target_series)
@@ -71,7 +81,7 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
         logger.info("[dry-run] Syncing external library (no files written)...")
         for action, src, dst in actions:
             stats[action] += 1
-            if action in ("COPY", "UPDATE"):
+            if action in ("COPY", "UPDATE") and src:
                 logger.info("  %s %s to %s", action, src.name, dst)
             elif action == "REMOVE_FILE":
                 logger.info("  %s %s", action, dst)
@@ -80,30 +90,64 @@ def run_external_sync(cfg: KnrsConfig, *, dry_run: bool = False) -> None:
             "[dry-run] Sync plan complete. Would Add: %d, Update: %d, Delete Files: %d",
             stats["COPY"], stats["UPDATE"], stats["REMOVE_FILE"]
         )
-        return
+        return {
+            "success_count": len(actions),
+            "failure_count": 0,
+            "total": len(actions),
+            "copied": stats["COPY"],
+            "updated": stats["UPDATE"],
+            "removed_files": stats["REMOVE_FILE"],
+            "removed_dirs": 0,
+            "failed_items": [],
+        }
+
+    success_count = 0
+    failure_count = 0
+    failed_items: list[str] = []
 
     if actions:
         logger.info("Executing %d action(s)...", len(actions))
     for action, src, dst in actions:
-        stats[action] += 1
-        if action in ("COPY", "UPDATE"):
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            logger.info("Copying %s to %s", src.name, dst)
-            shutil.copy2(src, dst)
-        elif action == "REMOVE_FILE":
-            logger.info("Removing debris file: %s", dst)
-            dst.unlink(missing_ok=True)
+        try:
+            if action in ("COPY", "UPDATE") and src:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                logger.info("Copying %s to %s", src.name, dst)
+                shutil.copy2(src, dst)
+                stats[action] += 1
+                success_count += 1
+            elif action == "REMOVE_FILE":
+                logger.info("Removing debris file: %s", dst)
+                dst.unlink(missing_ok=True)
+                stats[action] += 1
+                success_count += 1
+        except Exception as exc:
+            logger.error("Error executing %s for %s: %s", action, dst, exc)
+            failure_count += 1
+            failed_items.append(f"{action}: {dst.name} ({exc})")
 
     # Clean empty directories
     for p in sorted(cfg.external_library.rglob("*"), key=lambda x: len(x.parts), reverse=True):
         if ".stfolder" in p.parts:
             continue
         if p.is_dir() and not any(p.iterdir()):
-            stats["REMOVE_DIR"] += 1
-            logger.info("Removing empty directory: %s", p)
-            p.rmdir()
+            try:
+                stats["REMOVE_DIR"] += 1
+                logger.info("Removing empty directory: %s", p)
+                p.rmdir()
+            except Exception as exc:
+                logger.error("Error removing empty dir %s: %s", p, exc)
 
     logger.info(
         "External library sync complete. Added: %d, Updated: %d, Deleted Files: %d, Deleted Dirs: %d",
         stats["COPY"], stats["UPDATE"], stats["REMOVE_FILE"], stats["REMOVE_DIR"]
     )
+    return {
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "total": len(actions),
+        "copied": stats["COPY"],
+        "updated": stats["UPDATE"],
+        "removed_files": stats["REMOVE_FILE"],
+        "removed_dirs": stats["REMOVE_DIR"],
+        "failed_items": failed_items,
+    }
