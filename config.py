@@ -39,6 +39,9 @@ class KnrsConfig:
     external_library: Path = field(default_factory=lambda: Path("~/MetaLibrary").expanduser().resolve())
     benchmark_path: Path = field(default_factory=lambda: Path("~/.config/knrs/benchmarks").expanduser().resolve())
     enable_python_eval: bool = True
+    context_compact_trigger: str | int = "90%"
+    model_context_size: int | None = None
+
 
     # ------------------------------------------------------------------ #
     # Derived path helpers                                                 #
@@ -221,6 +224,27 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     if not isinstance(enable_python_eval, bool):
         raise ValueError("Config key 'enable_python_eval' must be a boolean.")
 
+    context_compact_trigger = raw.get("context_compact_trigger", "90%")
+    if not isinstance(context_compact_trigger, (str, int)):
+        raise ValueError("Config key 'context_compact_trigger' must be a string or integer.")
+
+    model_context_size_raw = raw.get("model_context_size")
+    model_context_size: int | None = None
+    if model_context_size_raw is not None:
+        if isinstance(model_context_size_raw, int):
+            model_context_size = model_context_size_raw
+        elif isinstance(model_context_size_raw, str):
+            s = model_context_size_raw.strip().lower()
+            if s.endswith("k"):
+                model_context_size = int(float(s[:-1]) * 1000)
+            elif s.endswith("m"):
+                model_context_size = int(float(s[:-1]) * 1_000_000)
+            else:
+                model_context_size = int(s)
+        else:
+            raise ValueError("Config key 'model_context_size' must be an integer or string (e.g. 131072, '128k').")
+
+
     cfg = KnrsConfig(
         calibre_path=resolve(raw["calibre_path"]),
         notes_path=resolve(raw["notes_path"]),
@@ -240,6 +264,8 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
         checkpoint_every_docs=checkpoint_every_docs,
         checkpoint_every_chunks=checkpoint_every_chunks,
         enable_python_eval=enable_python_eval,
+        context_compact_trigger=context_compact_trigger,
+        model_context_size=model_context_size,
     )
 
     logger.debug("Config loaded from %s", path)
@@ -256,6 +282,7 @@ def load_config(config_path: Path | None = None) -> KnrsConfig:
     logger.debug("  calibre_library_name: %s", cfg.calibre_library_name)
     logger.debug("  external_library: %s", cfg.external_library)
     logger.debug("  benchmark_path:  %s", cfg.benchmark_path)
+    logger.debug("  context_compact_trigger: %s", cfg.context_compact_trigger)
 
     # Perform one-time migration of legacy benchmark results
     _migrate_legacy_benchmarks(Path(__file__).parent.resolve(), cfg.benchmark_path)
@@ -292,9 +319,12 @@ def print_config(cfg: KnrsConfig) -> None:
         ("checkpoint_every_docs", str(cfg.checkpoint_every_docs)),
         ("checkpoint_every_chunks", str(cfg.checkpoint_every_chunks)),
         ("enable_python_eval", str(cfg.enable_python_eval)),
+        ("context_compact_trigger", str(cfg.context_compact_trigger)),
+        ("model_context_size", f"{cfg.model_context_size:,} tokens" if cfg.model_context_size else "(auto-detect / 256K default)"),
     ]
     for key, val in rows:
         table.add_row(key, val)
+
 
     rprint(Panel(table, title="[bold]knrs configuration[/bold]", expand=False))
 

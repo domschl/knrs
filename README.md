@@ -236,6 +236,7 @@ Create `~/.config/knrs/knrs.json`:
 | `checkpoint_every_docs`| `int` | `50` | Write vector index checkpoint every $N$ files. |
 | `checkpoint_every_chunks`| `int`| `5000` | Write vector index checkpoint every $M$ chunks. |
 | `enable_python_eval` | `bool` | `true` | Enable/disable the `python_eval` code sandbox in the research agent. |
+| `context_compact_trigger`| `string\|int` | `"90%"` | Context threshold to trigger compaction (percentage like `"90%"` or absolute char count). |
 
 ---
 
@@ -303,7 +304,9 @@ Launch the interactive REPL with `uv run knrs`. You can chat directly with the r
 | `/research-list`| — | Display tree view of past research files in `AINotes/Research/`. |
 | `/save-session`| `[name]` | Save conversation history to a JSON checkpoint. |
 | `/load-session`| `[name]` | Restore a saved conversation session. |
+| `/compact` | `[target]` | Compact conversational context to free token headroom. |
 | `/reset` | — | Clear conversational context and start a new session. |
+
 | `/backends` | — | List all discovered subprocess backends and their active states. |
 | `/models` | `<backend_name>` | List available and validated models for a backend. |
 | `/set-backend`| `<type> <backend_name>` | Switch active backend (e.g. `/set-backend summarizer summarizer_api`). |

@@ -114,15 +114,38 @@ class AgentSession:
              raise RuntimeError("Subprocess stdout is None")
              
         ready_line = self._proc.stdout.readline().strip()
-        if ready_line != "READY":
+        if not ready_line.startswith("READY"):
             self._proc.kill()
             raise RuntimeError(
                 f"Agent subprocess did not send READY; got: {ready_line!r}"
             )
-        logger.info("Agent backend loaded and ready.")
+        self.model_context_tokens: int | None = None
+        if " " in ready_line:
+            try:
+                info = json.loads(ready_line.split(" ", 1)[1])
+                if isinstance(info, dict) and "context_size" in info:
+                    self.model_context_tokens = int(info["context_size"])
+            except Exception:
+                pass
+
+        if self.model_context_tokens:
+            logger.info("Agent backend loaded and ready (model context: %d tokens).", self.model_context_tokens)
+        else:
+            logger.info("Agent backend loaded and ready.")
         AgentSession._active_session = self
         AgentSession._ref_count = 1
         return self
+
+    def get_context_window_chars(self) -> int:
+        """Return the effective context window capacity of the active model in characters."""
+        from agent.context import DEFAULT_MODEL_CONTEXT_CHARS, DEFAULT_CHARS_PER_TOKEN
+        if getattr(self.config, "model_context_size", None):
+            size = self.config.model_context_size
+            return size * DEFAULT_CHARS_PER_TOKEN if size < 500_000 else size
+        if getattr(self, "model_context_tokens", None) and self.model_context_tokens:
+            return self.model_context_tokens * DEFAULT_CHARS_PER_TOKEN
+        return DEFAULT_MODEL_CONTEXT_CHARS
+
 
     def __exit__(
         self,

@@ -18,7 +18,13 @@ from typing import Any, TYPE_CHECKING
 from config import KnrsConfig
 from agent.tools import AgentTools
 from agent.prompts import SYSTEM_PROMPT
-from agent.context import ConversationState, trim_history
+from agent.context import (
+    ConversationState,
+    trim_history,
+    compact_history,
+    parse_compact_trigger,
+    DEFAULT_MAX_CONTEXT_CHARS,
+)
 
 if TYPE_CHECKING:
     from agent.engine import AgentSession
@@ -97,8 +103,9 @@ class ResearchAgent:
 
     def _extract_tool_call(self, text: str) -> list[dict[str, Any]]:
         """Find and repair JSON, Qwen XML, or Gemma native tool calls."""
-        calls: List[Dict[str, Any]] = []
+        calls: list[dict[str, Any]] = []
         temp_text = text
+
 
         # 1. Parse Qwen-style XML tool calls: <tool_call> <function=...> <parameter=...> ... </tool_call>
         if "<tool_call>" in text:
@@ -376,20 +383,39 @@ class ResearchAgent:
         self.state.append_tool_result(tool_name, result)
         return result
 
+    # ── context compaction helpers ─────────────────────────────────
+
+    def get_compact_threshold_chars(self) -> int:
+        """Calculate the context character threshold that triggers compaction."""
+        trigger = getattr(self.config, "context_compact_trigger", "90%")
+        window_chars = DEFAULT_MAX_CONTEXT_CHARS
+        if hasattr(self.session, "get_context_window_chars"):
+            window_chars = self.session.get_context_window_chars()
+        return parse_compact_trigger(trigger, window_chars)
+
+    def should_compact(self) -> bool:
+        """Check if the current context size exceeds the compact trigger."""
+        return self.state.context_size() >= self.get_compact_threshold_chars()
+
+    def compact_context(self, *, force: bool = False) -> dict[str, Any]:
+        """Compact conversation context down below the trigger threshold."""
+        thresh = self.get_compact_threshold_chars()
+        target_chars = int(thresh * 0.7)  # compact down to 70% of trigger to provide headroom
+        return compact_history(self.state, max_chars=target_chars, force=force)
+
     # ── multi-turn respond (main REPL entry point) ──────────────────
 
     def respond(
         self,
         user_message: str,
         *,
-        max_steps: int = 30,
+        max_steps: int | None = None,
         on_step: Any = None,
     ) -> tuple[str, list[dict[str, Any]]]:
         """Process one user message through the full agent loop.
 
         Appends the user message, then runs step() in a loop until the
-        agent produces a response with no tool calls or the step limit
-        is hit.
+        agent produces a response with no tool calls.
 
         If the agent performed research (used search/read tools) but wrote
         a long chat response without saving a file, it gets a one-time
@@ -398,20 +424,32 @@ class ResearchAgent:
 
         Args:
             user_message: The user's free-text input.
-            max_steps:    Maximum number of generation steps.
+            max_steps:    Optional upper bound on steps (default: None, runs until completion).
             on_step:      Optional callback ``(step_num, msg, tool_calls) -> None``
                           for live display in the REPL.
 
         Returns:
             (final_text_response, all_tool_actions)
         """
-        # Trim if needed before adding the new message
-        trim_history(self.state)
+        # Compact if context crosses trigger before adding the new message
+        if self.should_compact():
+            logger.info(
+                "Context size (%d chars) crossed trigger (%d chars). Compacting...",
+                self.state.context_size(),
+                self.get_compact_threshold_chars(),
+            )
+            res = self.compact_context()
+            if on_step and res.get("compacted"):
+                pct = res.get("percent_reduction", 0.0)
+                on_step(-1, f"[dim cyan]Auto-compacted context: {res['before_chars']:,} → {res['after_chars']:,} chars ({pct:.1f}% reduction)[/dim cyan]", [])
+        else:
+            trim_history(self.state)
 
         self.state.append_user(user_message)
 
         all_tool_actions: list[dict[str, Any]] = []
         final_text = ""
+        msg = ""
         files_written_before = set(self.state.written_files)
         _write_nudge_sent = False  # only nudge once per turn
 
@@ -421,7 +459,12 @@ class ResearchAgent:
             "wikipedia_fetch", "timeline_query",
         }
 
-        for step_num in range(max_steps):
+        step_num = 0
+        while True:
+            if max_steps is not None and step_num >= max_steps:
+                final_text = msg
+                break
+
             msg, tool_calls = self.step()
 
             if on_step:
@@ -457,6 +500,7 @@ class ResearchAgent:
                                 "file_write. Please begin your research now."
                             )
                         self.state.append_user(nudge)
+                        step_num += 1
                         continue  # loop again — don't accept this as the final response
 
                 final_text = msg
@@ -466,9 +510,21 @@ class ResearchAgent:
             for tc in tool_calls:
                 all_tool_actions.append(tc)
                 self.execute_tool(tc)
-        else:
-            # Reached max_steps
-            final_text = msg  # type: ignore[possibly-undefined]
+
+            # Check if tool results caused context to cross trigger threshold
+            if self.should_compact():
+                logger.info(
+                    "Context size (%d chars) crossed trigger (%d chars) during tool execution. Compacting...",
+                    self.state.context_size(),
+                    self.get_compact_threshold_chars(),
+                )
+                res = self.compact_context()
+                if on_step and res.get("compacted"):
+                    pct = res.get("percent_reduction", 0.0)
+                    on_step(step_num, f"[dim cyan]Auto-compacted context during turn: {res['before_chars']:,} → {res['after_chars']:,} chars ({pct:.1f}% reduction)[/dim cyan]", [])
+
+            step_num += 1
 
         return final_text, all_tool_actions
+
 

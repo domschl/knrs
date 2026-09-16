@@ -198,7 +198,6 @@ def _run_agent_turn(agent: ResearchAgent, user_message: str) -> None:
     try:
         agent.respond(
             user_message,
-            max_steps=30,
             on_step=on_step,
         )
     except Exception as e:

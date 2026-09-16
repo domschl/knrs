@@ -59,7 +59,10 @@ CONFIG_SCHEMA: dict[str, str] = {
     "model_name": "str",
     "default_max_tokens": "int",
     "default_temperature": "float",
+    "context_compact_trigger": "str?",
+    "model_context_size": "int?",
 }
+
 
 DEFAULT_LOCAL_CONFIG: AgentApiConfig = {
     "model_name": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
@@ -79,7 +82,36 @@ class ApiAgentEngine:
         self.url: str = server_cfg["url"].rstrip("/")
         self.api_key: str | None = server_cfg.get("api_key")
         self.model: str = local_cfg["model_name"]
-        logger.info(f"Agent API backend: {self.url} (Model: {self.model})")
+        self.context_size: int | None = None
+
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        # Check user-configured model_context_size first
+        if local_cfg.get("model_context_size"):
+            try:
+                self.context_size = int(local_cfg["model_context_size"])
+            except (ValueError, TypeError):
+                pass
+
+        if self.context_size is None:
+            try:
+                resp = requests.get(f"{self.url}/v1/models", headers=headers, timeout=2)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("data", []):
+                        if m.get("id") == self.model:
+                            meta = m.get("meta", {})
+                            if "n_ctx" in meta:
+                                self.context_size = int(meta["n_ctx"])
+                                break
+            except Exception:
+                pass
+
+        logger.info(f"Agent API backend: {self.url} (Model: {self.model}, n_ctx: {self.context_size})")
+
+
 
     def chat(
         self,
@@ -159,8 +191,14 @@ class ApiAgentEngine:
 
 def run_persistent(engine: ApiAgentEngine) -> None:
     """Main loop: read JSON requests from stdin, write responses to stdout."""
-    # Signal readiness
-    sys.stdout.write("READY\n")
+    # Signal readiness with optional detected context size
+    info: dict[str, Any] = {}
+    if getattr(engine, "context_size", None):
+        info["context_size"] = engine.context_size
+    if info:
+        sys.stdout.write(f"READY {json.dumps(info)}\n")
+    else:
+        sys.stdout.write("READY\n")
     sys.stdout.flush()
 
     while True:
@@ -227,10 +265,14 @@ def main() -> None:
                 "model_name": {"type": "str"},
                 "default_max_tokens": {"type": "int", "min": 100, "max": 128000},
                 "default_temperature": {"type": "float", "min": 0.0, "max": 2.0},
+                "context_compact_trigger": {"type": "str"},
+                "model_context_size": {"type": "int", "min": 512, "max": 2000000},
             },
+
         }
         print(json.dumps(cap))
         sys.exit(0)
+
 
     local_cfg = get_platform_config(CONFIG_FILE, DEFAULT_LOCAL_CONFIG)
     errors = validate_config(local_cfg, CONFIG_SCHEMA)

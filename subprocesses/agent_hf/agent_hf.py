@@ -110,7 +110,11 @@ CONFIG_SCHEMA: dict[str, str] = {
     "default_max_tokens": "int",
     "default_temperature": "float",
     "load_in_4bit": "bool",
+    "context_compact_trigger": "str?",
+    "model_context_size": "int?",
 }
+
+
 
 DEFAULT_CONFIG: AgentHfConfig = {
     "model_id": "Qwen/Qwen3-32B-AWQ",
@@ -233,7 +237,17 @@ class HFAgentEngine:
             device_map=device,
             quantization_config=quantization_config,
         )
-        logger.info("Model loaded successfully.")
+        if config.get("model_context_size"):
+
+            try:
+                self.context_size = int(config["model_context_size"])
+            except (ValueError, TypeError):
+                self.context_size = None
+        else:
+            self.context_size = getattr(self.model.config, "max_position_embeddings", None)
+        logger.info("Model loaded successfully (context_size: %s).", self.context_size)
+
+
 
     def chat(
         self,
@@ -402,7 +416,13 @@ class HFAgentEngine:
 
 def run_persistent(engine: HFAgentEngine) -> None:
     """Main loop: read JSON requests from stdin, write responses to stdout."""
-    sys.stdout.write("READY\n")
+    info: dict[str, Any] = {}
+    if getattr(engine, "context_size", None):
+        info["context_size"] = engine.context_size
+    if info:
+        sys.stdout.write(f"READY {json.dumps(info)}\n")
+    else:
+        sys.stdout.write("READY\n")
     sys.stdout.flush()
 
     while True:
@@ -449,10 +469,14 @@ def main() -> None:
                 "default_max_tokens":  {"type": "int",   "min": 100, "max": 128000},
                 "default_temperature": {"type": "float", "min": 0.0, "max": 2.0},
                 "load_in_4bit":        {"type": "bool"},
+                "context_compact_trigger": {"type": "str"},
+                "model_context_size":      {"type": "int", "min": 512, "max": 2000000},
             },
+
         }
         print(json.dumps(cap))
         sys.exit(0)
+
 
     config = get_platform_config(CONFIG_FILE, DEFAULT_CONFIG)
     errors = validate_config(config, CONFIG_SCHEMA)

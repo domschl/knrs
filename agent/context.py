@@ -15,9 +15,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Default context budget in characters.  Targets 256K-token models;
+# Default context budget in characters. Targets 256K-token models;
 # 200K chars ≈ 50-60K tokens leaves headroom for the response.
 DEFAULT_MAX_CONTEXT_CHARS = 200_000
+DEFAULT_MODEL_CONTEXT_TOKENS = 262_144
+DEFAULT_CHARS_PER_TOKEN = 4
+DEFAULT_MODEL_CONTEXT_CHARS = DEFAULT_MODEL_CONTEXT_TOKENS * DEFAULT_CHARS_PER_TOKEN
 
 
 @dataclass
@@ -56,61 +59,300 @@ class ConversationState:
         self.written_files.clear()
 
 
-# ── History trimming ──────────────────────────────────────────────────────────
+# ── Context Compact Trigger Parsing ──────────────────────────────────────────
+
+
+def parse_compact_trigger(
+    trigger: str | int | float,
+    model_context_chars: int = DEFAULT_MODEL_CONTEXT_CHARS,
+) -> int:
+    """Calculate the context character threshold that triggers compaction.
+
+    Args:
+        trigger: Either a percentage string (e.g. "90%", "85.5%"), a float ratio
+                 (e.g. 0.9), or an absolute context size as an int or string
+                 (e.g. 180000, "180k", "200000 chars", "50000 tokens").
+        model_context_chars: Total capacity of the model's context in characters.
+
+    Returns:
+        Integer threshold in characters (minimum 1,000).
+    """
+    import re
+
+    if isinstance(trigger, str):
+        s = trigger.strip()
+        if s.endswith("%"):
+            try:
+                pct = float(s[:-1].strip())
+                return max(1000, int((pct / 100.0) * model_context_chars))
+            except ValueError:
+                logger.warning("Invalid percentage trigger %r; falling back to 90%%", trigger)
+                return max(1000, int(0.9 * model_context_chars))
+
+        s_lower = s.lower()
+        match = re.match(r"^([\d.]+)\s*([kmg]?)\s*(tokens?|t|chars?|c)?$", s_lower)
+        if match:
+            try:
+                val = float(match.group(1))
+                mult = match.group(2)
+                unit = match.group(3) or ""
+                if mult == "k":
+                    val *= 1_000
+                elif mult == "m":
+                    val *= 1_000_000
+                elif mult == "g":
+                    val *= 1_000_000_000
+
+                if unit.startswith("t"):
+                    val *= DEFAULT_CHARS_PER_TOKEN
+                return max(1000, int(val))
+            except (ValueError, OverflowError):
+                pass
+
+        try:
+            return max(1000, int(float(s)))
+        except ValueError:
+            logger.warning("Could not parse compact trigger %r; falling back to 90%%", trigger)
+            return max(1000, int(0.9 * model_context_chars))
+
+
+    if isinstance(trigger, (int, float)):
+        if 0.0 < trigger <= 1.0:
+            return max(1000, int(trigger * model_context_chars))
+        return max(1000, int(trigger))
+
+    return max(1000, int(0.9 * model_context_chars))
+
+
+# ── Structured History Compaction ───────────────────────────────────────────
+
+def _extract_citations(text: str) -> list[str]:
+    """Extract source paths, wiki links, and citations from text."""
+    import re
+    citations: set[str] = set()
+    # Match patterns like books:Path/To/Doc.md, wiki:Notes/X.md, AINotes/Research/X.md
+    patterns = [
+        r"(?:books|wiki):[A-Za-z0-9_\-./]+\.md(?:#L\d+(?:-L\d+)?)?",
+        r"AINotes/[A-Za-z0-9_\-./]+\.md",
+        r"https?://[^\s\)\],]+",
+        r"\[\[([^\]]+)\]\]",
+    ]
+    for pat in patterns:
+        for m in re.finditer(pat, text):
+            citations.add(m.group(0))
+    return sorted(citations)
+
+
+def _distill_tool_result(content: str, max_excerpt_len: int = 500) -> str:
+    """Condense a large tool output while retaining tool name, paths, citations, and status."""
+    lines = content.splitlines()
+    first_line = lines[0] if lines else "Tool result:"
+    
+    # Check for failure or errors
+    has_error = any("error" in line.lower() or "fail" in line.lower() for line in lines[:5])
+    citations = _extract_citations(content)
+    
+    # If already small enough, keep as is
+    if len(content) <= max_excerpt_len:
+        return content
+
+    distilled_parts = [first_line]
+    if has_error:
+        error_lines = [l for l in lines if "error" in l.lower() or "fail" in l.lower()][:3]
+        distilled_parts.append("Status / Error: " + "; ".join(error_lines))
+        
+    if citations:
+        distilled_parts.append("Sources & Citations: " + ", ".join(citations[:10]))
+        
+    # Take representative head and tail
+    head_snippet = "\n".join(lines[1:6]).strip()
+    if head_snippet:
+        distilled_parts.append("Excerpt:\n" + head_snippet[:300])
+        
+    distilled_parts.append(f"[Output pruned: {len(content)} chars → retained key citations and status]")
+    return "\n".join(distilled_parts)
+
+
+def compact_history(
+    state: ConversationState,
+    max_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
+    *,
+    preserve_tail: int = 6,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Compact older messages to bring total context within *max_chars*.
+
+    Strategy:
+        1. Always preserve the system prompt (index 0) verbatim.
+        2. Always preserve the most recent *preserve_tail* messages verbatim.
+        3. Distill bulky older tool results (observation pruning).
+        4. If still exceeding *max_chars* or forced, synthesize older dialog into
+           a structured research state (goals, cited sources, created files, findings).
+        5. Maintain proper conversational turn alternation for chat templates.
+
+    Returns:
+        Dict with metrics: compacted (bool), before_chars, after_chars, saved_chars, percent_reduction.
+    """
+    before_chars = state.context_size()
+    before_msgs = len(state.history)
+
+    if not force and before_chars <= max_chars:
+        return {
+            "compacted": False,
+            "before_chars": before_chars,
+            "after_chars": before_chars,
+            "saved_chars": 0,
+            "percent_reduction": 0.0,
+        }
+
+    if before_msgs <= 2:
+        return {
+            "compacted": False,
+            "before_chars": before_chars,
+            "after_chars": before_chars,
+            "saved_chars": 0,
+            "percent_reduction": 0.0,
+        }
+
+    system_msg = state.history[0] if state.history[0]["role"] == "system" else None
+    msgs = state.history[1:] if system_msg else state.history[:]
+
+    # Calculate actual tail count to preserve
+    actual_tail_count = min(preserve_tail, len(msgs))
+    if actual_tail_count >= len(msgs) and len(msgs) > 2:
+        actual_tail_count = max(2, len(msgs) // 2)
+
+    tail = msgs[-actual_tail_count:] if actual_tail_count > 0 else []
+    middle = msgs[:-actual_tail_count] if actual_tail_count > 0 else msgs[:]
+
+    if not middle:
+        return {
+            "compacted": False,
+            "before_chars": before_chars,
+            "after_chars": before_chars,
+            "saved_chars": 0,
+            "percent_reduction": 0.0,
+        }
+
+    # Phase 1: Distill bulky tool results in middle
+    distilled_middle: list[dict[str, str]] = []
+    for msg in middle:
+        role = msg["role"]
+        content = msg.get("content", "")
+        if role == "user" and content.startswith("Tool result for "):
+            distilled_middle.append({"role": role, "content": _distill_tool_result(content)})
+        else:
+            distilled_middle.append(msg)
+
+    # Check if Phase 1 brought context under budget (unless force=True)
+    temp_size = (len(system_msg["content"]) if system_msg else 0) + \
+                sum(len(m.get("content", "")) for m in distilled_middle) + \
+                sum(len(m.get("content", "")) for m in tail)
+
+    if not force and temp_size <= max_chars:
+        new_history: list[dict[str, str]] = []
+        if system_msg:
+            new_history.append(system_msg)
+        new_history.extend(distilled_middle)
+        new_history.extend(tail)
+        state.history = new_history
+        after_chars = state.context_size()
+        saved = max(0, before_chars - after_chars)
+        logger.info(
+            "Pruned middle tool results: %d → %d chars (%d msgs)",
+            before_chars, after_chars, len(new_history)
+        )
+        return {
+            "compacted": True,
+            "before_chars": before_chars,
+            "after_chars": after_chars,
+            "saved_chars": saved,
+            "percent_reduction": (saved / before_chars * 100.0) if before_chars > 0 else 0.0,
+        }
+
+    # Phase 2: Structured Research State Synthesis
+    all_citations: set[str] = set()
+    user_queries: list[str] = []
+    findings: list[str] = []
+
+    for msg in middle:
+        role = msg["role"]
+        content = msg.get("content", "")
+        citations = _extract_citations(content)
+        all_citations.update(citations)
+
+        if role == "user":
+            if not content.startswith("Tool result for ") and not content.startswith("[SYSTEM]"):
+                clean_query = content.strip().replace("\n", " ")
+                if clean_query and len(clean_query) > 5:
+                    user_queries.append(clean_query[:200])
+        elif role == "assistant":
+            # Extract key insights or plan steps
+            lines = [l.strip() for l in content.splitlines() if l.strip()]
+            for line in lines:
+                if line.startswith(("-", "*", "•", "1.", "2.", "3.", "4.", "5.", "#")):
+                    findings.append(line[:250])
+
+    summary_sections: list[str] = ["[COMPACTED CONTEXT STATE — Prior research & dialogue distilled]"]
+
+    if user_queries:
+        summary_sections.append("### User Goals & Directives:")
+        for q in user_queries[-5:]:
+            summary_sections.append(f"- {q}")
+
+    if all_citations:
+        summary_sections.append("### Verified Sources & Citations Consulted:")
+        for c in sorted(all_citations)[:25]:
+            summary_sections.append(f"- `{c}`")
+
+    if state.written_files:
+        summary_sections.append("### Research Files Created / Modified:")
+        for wf in state.written_files:
+            summary_sections.append(f"- `{wf}`")
+
+    if findings:
+        summary_sections.append("### Key Findings & Working Hypotheses:")
+        for f in findings[:15]:
+            summary_sections.append(f"- {f}")
+
+    summary_text = "\n".join(summary_sections)
+
+    new_history = []
+    if system_msg:
+        new_history.append(system_msg)
+    new_history.append({"role": "user", "content": summary_text})
+    new_history.append({
+        "role": "assistant",
+        "content": "Acknowledged. I retain the distilled research state, citations, and verified findings in memory. Continuing with the conversation.",
+    })
+    new_history.extend(tail)
+
+    state.history = new_history
+    after_chars = state.context_size()
+    saved = max(0, before_chars - after_chars)
+
+    logger.info(
+        "Compacted conversation history: %d → %d messages (%d → %d chars, %.1f%% reduction)",
+        before_msgs, len(new_history), before_chars, after_chars,
+        (saved / before_chars * 100.0) if before_chars > 0 else 0.0,
+    )
+
+    return {
+        "compacted": True,
+        "before_chars": before_chars,
+        "after_chars": after_chars,
+        "saved_chars": saved,
+        "percent_reduction": (saved / before_chars * 100.0) if before_chars > 0 else 0.0,
+    }
+
 
 def trim_history(
     state: ConversationState,
     max_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
 ) -> None:
-    """Compress older messages when the context exceeds *max_chars*.
+    """Backward-compatible wrapper for compact_history."""
+    compact_history(state, max_chars=max_chars, force=False)
 
-    Strategy:
-        1. Always keep the system prompt (index 0).
-        2. Always keep the last *tail_count* messages verbatim.
-        3. Summarize everything in between into a single compressed message.
-    """
-    if state.context_size() <= max_chars:
-        return
-
-    tail_count = 20  # keep last N messages verbatim
-
-    if len(state.history) <= tail_count + 1:
-        # Not enough messages to compress meaningfully.
-        return
-
-    system_msg = state.history[0] if state.history[0]["role"] == "system" else None
-    tail = state.history[-tail_count:]
-    middle = state.history[1:-tail_count] if system_msg else state.history[:-tail_count]
-
-    # Build a compact summary of the middle section.
-    summary_parts: list[str] = []
-    for msg in middle:
-        role = msg["role"]
-        content = msg.get("content", "")
-        # Keep a short excerpt of each message.
-        excerpt = content[:300]
-        if len(content) > 300:
-            excerpt += "…"
-        summary_parts.append(f"[{role}] {excerpt}")
-
-    summary_text = (
-        "[CONTEXT SUMMARY — older messages compressed]\n"
-        + "\n".join(summary_parts)
-    )
-
-    new_history: list[dict[str, str]] = []
-    if system_msg:
-        new_history.append(system_msg)
-    new_history.append({"role": "user", "content": summary_text})
-    new_history.extend(tail)
-
-    state.history = new_history
-    logger.info(
-        "Trimmed conversation history: %d → %d messages (%d chars)",
-        len(middle) + len(tail) + (1 if system_msg else 0),
-        len(new_history),
-        state.context_size(),
-    )
 
 
 # ── Session persistence ──────────────────────────────────────────────────────

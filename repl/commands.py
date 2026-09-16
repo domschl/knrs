@@ -88,6 +88,7 @@ def cmd_help(args: list[str], cfg: KnrsConfig) -> None:
     table.add_column("Description")
     
     table.add_row("/reset", "Clear conversation history and start a new session")
+    table.add_row(r"/compact \[target]", "Compact conversation context to free token headroom")
     table.add_row(r"/save-session \[name]", "Save current conversation to a checkpoint")
     table.add_row(r"/load-session \[name]", "Load a saved conversation checkpoint")
     table.add_row("/research-list", "List past research files in AINotes/Research")
@@ -1132,8 +1133,62 @@ def cmd_research_list(args: list[str], cfg: KnrsConfig):
             
     console.print(tree)
 
+def cmd_compact(args: list[str], cfg: KnrsConfig) -> None:
+    """Compact the current conversation context to free token headroom."""
+    from repl.repl import _get_current_state, _current_agent
+    from agent.context import compact_history, parse_compact_trigger, DEFAULT_MAX_CONTEXT_CHARS
+
+    state = _get_current_state()
+    if state is None or not state.history:
+        console.print("[yellow]No active conversation session to compact.[/yellow]")
+        return
+
+    if len(state.history) <= 2:
+        console.print(
+            f"[yellow]Conversation context is already minimal "
+            f"({state.context_size():,} chars across {len(state.history)} messages). "
+            f"No compaction needed.[/yellow]"
+        )
+        return
+
+    before_chars = state.context_size()
+    before_msgs = len(state.history)
+
+    target_chars = None
+    if args:
+        try:
+            window = DEFAULT_MAX_CONTEXT_CHARS
+            if _current_agent is not None and hasattr(_current_agent.session, "get_context_window_chars"):
+                window = _current_agent.session.get_context_window_chars()
+            target_chars = parse_compact_trigger(args[0], window)
+        except Exception:
+            pass
+
+    if target_chars is None:
+        if _current_agent is not None and hasattr(_current_agent, "get_compact_threshold_chars"):
+            target_chars = int(_current_agent.get_compact_threshold_chars() * 0.7)
+        else:
+            target_chars = int(DEFAULT_MAX_CONTEXT_CHARS * 0.7)
+
+    console.print(f"[dim]Compacting conversation context (current: {before_chars:,} chars, target: {target_chars:,} chars)…[/dim]")
+    res = compact_history(state, max_chars=target_chars, force=True)
+
+    after_chars = res["after_chars"]
+    after_msgs = len(state.history)
+    saved_chars = before_chars - after_chars
+    pct = (saved_chars / before_chars * 100.0) if before_chars > 0 else 0.0
+
+    console.print(
+        f"[bold green]Context compacted successfully:[/bold green]\n"
+        f"  Messages: {before_msgs} → {after_msgs}\n"
+        f"  Size:     {before_chars:,} chars (~{before_chars // 4:,} tokens) → "
+        f"{after_chars:,} chars (~{after_chars // 4:,} tokens)\n"
+        f"  Saved:    {saved_chars:,} chars ({pct:.1f}% reduction)"
+    )
+
 COMMANDS = {
     "/help": cmd_help,
+    "/compact": cmd_compact,
     "/sync": cmd_sync,
     "/sync-git": cmd_sync_git,
     "/sync-calibre": cmd_sync_calibre,
@@ -1156,3 +1211,4 @@ COMMANDS = {
     "/sync-status": cmd_syncthing_status,
     "/unload": cmd_unload,
 }
+
