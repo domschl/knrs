@@ -46,14 +46,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("embedder_hf")
 
-MODEL_NAME = "google/embeddinggemma-300m"
-# 32 is the sentence-transformers default and keeps per-call KV-cache
-# allocations small.  256 caused large sliding-window KV caches with
-# Gemma3 that accumulated across server-mode encode() calls → OOM.
-ENCODE_BATCH_SIZE = 32
+MODEL_NAME = "google/embeddinggemma-2"
+ENCODE_BATCH_SIZE = 64
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "device": "auto"
+    "model_name": "google/embeddinggemma-2",
+    "batch_size": 64,
+    "device": "auto",
+    "torch_dtype": "bfloat16",
 }
 
 def get_platform_config() -> dict[str, Any]:
@@ -89,47 +89,64 @@ def _get_device(config_device: str = "auto") -> str:
     return "cpu"
 
 
-def _load_model() -> Any:
+def _load_model() -> tuple[Any, dict[str, Any]]:
+    import torch
     from huggingface_hub import snapshot_download
     from sentence_transformers import SentenceTransformer
-    
-    # Attempt to find the model in the local HuggingFace cache to avoid 
-    # the delay caused by checking for updates online (ETag requests).
-    load_path: str = MODEL_NAME
+
+    config = get_platform_config()
+    model_name = config.get("model_name", MODEL_NAME)
+
+    load_path: str = model_name
     try:
-        cached_path: str = snapshot_download(MODEL_NAME, local_files_only=True)
+        cached_path: str = snapshot_download(model_name, local_files_only=True)
         if cached_path:
             logger.info("Found cached model at %s", cached_path)
             load_path = cached_path
     except Exception:
-        # Fallback to the original MODEL_NAME if not cached or on error.
         pass
 
-    config = get_platform_config()
     device = _get_device(config.get("device", "auto"))
     logger.info("Using device: %s", device)
     logger.info("Loading SentenceTransformer model %s...", load_path)
-    model = SentenceTransformer(load_path, trust_remote_code=True, device=device)
+
+    model_kwargs: dict[str, Any] = {}
+    torch_dtype = config.get("torch_dtype", "bfloat16")
+    if device == "cuda" and torch_dtype == "bfloat16" and torch.cuda.is_bf16_supported():
+        model_kwargs["torch_dtype"] = torch.bfloat16
+
+    model = SentenceTransformer(
+        load_path,
+        trust_remote_code=True,
+        device=device,
+        model_kwargs=model_kwargs,
+    )
     logger.info("Model loaded.")
-    return model
+    return model, config
 
 
-def _embed(model: Any, input_path: Path, output_path: Path, mode: str = "document") -> None:
+def _embed(
+    model: Any,
+    input_path: Path,
+    output_path: Path,
+    mode: str = "document",
+    batch_size: int = ENCODE_BATCH_SIZE,
+) -> None:
     import torch
     import numpy as np
-    
+
     with input_path.open("r", encoding="utf-8") as f:
         texts: list[str] = json.load(f)
     if not texts:
         np.save(str(output_path), np.array([], dtype=np.float32))
         return
-    
+
     encode_kwargs: dict[str, Any] = {
-        "batch_size": ENCODE_BATCH_SIZE,
+        "batch_size": batch_size,
         "show_progress_bar": False,   # parent's rich bar covers overall progress
         "convert_to_numpy": True,
     }
-    
+
     if mode == "query":
         embeddings = model.encode_query(texts, **encode_kwargs)
     else:
@@ -148,8 +165,9 @@ def server_mode() -> None:
     """Persistent server: load model once, serve many batches."""
     # Must be set before PyTorch is imported so the CUDA allocator picks it up.
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-    
-    model = _load_model()
+
+    model, config = _load_model()
+    batch_size = int(config.get("batch_size", ENCODE_BATCH_SIZE))
 
     # Suppress INFO-level noise during serving so it doesn't fight rich bars.
     logging.getLogger().setLevel(logging.WARNING)
@@ -167,7 +185,7 @@ def server_mode() -> None:
             continue
         mode, input_path, output_path = parts[0], Path(parts[1]), Path(parts[2])
         try:
-            _embed(model, input_path, output_path, mode)
+            _embed(model, input_path, output_path, mode, batch_size=batch_size)
             print("DONE", flush=True)
         except Exception as exc:
             print(f"ERROR: {exc}", flush=True)
@@ -177,10 +195,11 @@ def one_shot_mode(mode: str, input_path: Path, output_path: Path) -> None:
     """Legacy one-shot mode for standalone / backward-compat use."""
     # Must be set before PyTorch is imported so the CUDA allocator picks it up.
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-    
-    model = _load_model()
+
+    model, config = _load_model()
+    batch_size = int(config.get("batch_size", ENCODE_BATCH_SIZE))
     logger.info("Computing embeddings (mode=%s)...", mode)
-    _embed(model, input_path, output_path, mode)
+    _embed(model, input_path, output_path, mode, batch_size=batch_size)
     logger.info("Saved embeddings to %s", output_path)
 
 
@@ -191,10 +210,13 @@ def main() -> None:
             "type": "embedder",
             "config_file": "embedder_config_hf.json",
             "platform": "any",
-            "validated_models": [MODEL_NAME],
-            "available_models": [MODEL_NAME],
+            "validated_models": ["google/embeddinggemma-2", "google/embeddinggemma-300m"],
+            "available_models": ["google/embeddinggemma-2", "google/embeddinggemma-300m"],
             "parameters": {
-                "device": {"type": "str"}
+                "model_name": {"type": "str"},
+                "batch_size": {"type": "int"},
+                "torch_dtype": {"type": "str"},
+                "device": {"type": "str"},
             },
         }
         print(json.dumps(cap))
