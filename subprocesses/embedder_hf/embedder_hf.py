@@ -47,11 +47,11 @@ logging.basicConfig(
 logger = logging.getLogger("embedder_hf")
 
 MODEL_NAME = "google/embeddinggemma-2"
-ENCODE_BATCH_SIZE = 16
+ENCODE_BATCH_SIZE = 8
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "model_name": "google/embeddinggemma-2",
-    "batch_size": 16,
+    "batch_size": 8,
     "device": "auto",
     "torch_dtype": "bfloat16",
 }
@@ -120,6 +120,7 @@ def _load_model() -> tuple[Any, dict[str, Any]]:
         trust_remote_code=True,
         device=device,
         model_kwargs=model_kwargs,
+        config_kwargs={"vision_config": None, "audio_config": None},
     )
     logger.info("Model loaded.")
     return model, config
@@ -134,18 +135,25 @@ def _safe_encode(
 ) -> np.ndarray:
     import torch
     import numpy as np
+    import gc
 
     encode_fn = model.encode_query if mode == "query" else model.encode_document
+    oom_occurred = False
     try:
         return encode_fn(texts, batch_size=batch_size, **kwargs)
     except torch.OutOfMemoryError:
+        oom_occurred = True
+
+    if oom_occurred:
         logger.warning(
             "CUDA OOM with batch_size=%d for %d texts; clearing cache and retrying with smaller batch...",
             batch_size,
             len(texts),
         )
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
         if batch_size > 1:
             return _safe_encode(model, texts, mode, batch_size=max(1, batch_size // 2), **kwargs)
         elif len(texts) > 1:
