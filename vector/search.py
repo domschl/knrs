@@ -89,7 +89,7 @@ def get_context_aware_text(searcher: KnrsSearcher, result: SearchResult) -> tupl
     prev_max = chunk_start - prev_chunk
     next_max = prev_max + chunk_size
     
-    borders: set[str] = {'.', '!', '?', '\n', '。', '！', '？'}
+    borders: set[str] = {'.', '!', '?', '\n', '。', '！', '？', '།', '༎', '༏', '༈'}
     act_start = prev_max
     for ind in range(prev_max - 1, -1, -1):
         if extended_text[ind] in borders:

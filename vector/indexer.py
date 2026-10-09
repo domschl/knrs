@@ -157,7 +157,7 @@ class KnrsIndexer:
         # 1. Write both temporary files first.
         np.save(tmp_npy, embeddings)
         with open(tmp_json, "w", encoding="utf-8") as fh:
-            json.dump(meta, fh, indent=2)
+            json.dump(meta, fh, separators=(",", ":"))
             
         # 2. Only if both writes succeeded, perform the atomic replaces.
         # This minimizes the window where the database could be inconsistent
@@ -391,7 +391,39 @@ class KnrsIndexer:
         failed_items: list[str] = []
         new_chunks_count = 0
 
+        # Buffer for batching chunks across files to maximize GPU saturation
+        BATCH_CHUNKS = 64
+        pending_chunks: list[tuple[str, int, str, bool]] = []  # (key, chunk_idx, chunk_text, is_last_chunk_of_file)
+        pending_embs: list[np.ndarray] = []
+
         with EmbedderSession(self.config) as session:
+            def flush_buffer(p_task=None) -> None:
+                nonlocal chunks_since_checkpoint, new_chunks_count
+                if not pending_chunks:
+                    return
+
+                batch_texts = [item[2] for item in pending_chunks]
+                batch_emb = session.embed(batch_texts, encode_mode="document")
+                pending_embs.append(batch_emb)
+
+                for key, idx, text, is_last in pending_chunks:
+                    meta["chunks"].append({
+                        "source_key":  key,
+                        "path":        key,
+                        "chunk_index": idx,
+                        "text":        text[:200] + "...",
+                    })
+                    meta["full_texts"].append(text)
+                    if is_last and key in current_hashes:
+                        meta["file_hashes"][key] = current_hashes[key]
+
+                num_new = len(pending_chunks)
+                new_chunks_count += num_new
+                chunks_since_checkpoint += num_new
+                if p_task is not None:
+                    progress.advance(p_task, num_new)
+                pending_chunks.clear()
+
             with Progress(*progress_columns, refresh_per_second=4) as progress:
                 task = progress.add_task(
                     f"Indexing [{self.config.embedder_name}]",
@@ -414,40 +446,18 @@ class KnrsIndexer:
                         )
 
                         if chunks:
-                            # Process in batches for smoother progress updates on large files
-                            file_embs = []
-                            INTERNAL_BATCH = 1024
-                            for i in range(0, len(chunks), INTERNAL_BATCH):
-                                batch = chunks[i : i + INTERNAL_BATCH]
-                                batch_emb = session.embed(batch, encode_mode="document")
-                                file_embs.append(batch_emb)
-                                
-                                progress.advance(task, len(batch))
-                                chunks_since_checkpoint += len(batch)
-
-                            new_emb = np.concatenate(file_embs, axis=0)
-                            if len(embeddings) == 0:
-                                embeddings = new_emb
-                            else:
-                                embeddings = np.concatenate(
-                                    [embeddings, new_emb], axis=0
-                                )
+                            num_chunks = len(chunks)
                             for i, chunk in enumerate(chunks):
-                                meta["chunks"].append({
-                                    "source_key":  key,
-                                    "path":        key,
-                                    "chunk_index": i,
-                                    "text":        chunk[:200] + "...",
-                                })
-                                meta["full_texts"].append(chunk)
-                            new_chunks_count += len(chunks)
+                                is_last = (i == num_chunks - 1)
+                                pending_chunks.append((key, i, chunk, is_last))
+                                if len(pending_chunks) >= BATCH_CHUNKS:
+                                    flush_buffer(task)
                         else:
-                            # Empty file or too small, just advance by 1 if we are in fallback mode
+                            # Empty file or too small (< 100 chars)
+                            if key in current_hashes:
+                                meta["file_hashes"][key] = current_hashes[key]
                             if total_chunks == total_files:
                                 progress.advance(task, 1)
-
-                        if key in current_hashes:
-                            meta["file_hashes"][key] = current_hashes[key]
 
                         success_count += 1
 
@@ -460,6 +470,14 @@ class KnrsIndexer:
                         file_num == total_files or 
                         chunks_since_checkpoint >= checkpoint_every_chunks):
                         
+                        flush_buffer(task)
+                        if pending_embs:
+                            if len(embeddings) == 0:
+                                embeddings = np.concatenate(pending_embs, axis=0)
+                            else:
+                                embeddings = np.concatenate([embeddings] + pending_embs, axis=0)
+                            pending_embs.clear()
+
                         meta["model"] = self.config.embedder_name
                         self._save_state(embeddings, meta)
                         chunks_since_checkpoint = 0
@@ -469,6 +487,17 @@ class KnrsIndexer:
                             f"Checkpoint: {file_num}/{total_files} files "
                             f"({pct}%), {len(meta['chunks'])} total chunks."
                         )
+
+                # Final flush in case any items remain in buffer
+                flush_buffer(task)
+                if pending_embs:
+                    if len(embeddings) == 0:
+                        embeddings = np.concatenate(pending_embs, axis=0)
+                    else:
+                        embeddings = np.concatenate([embeddings] + pending_embs, axis=0)
+                    pending_embs.clear()
+                    meta["model"] = self.config.embedder_name
+                    self._save_state(embeddings, meta)
 
         logger.info(
             "Indexing complete: %d total chunks across %d files in %s",

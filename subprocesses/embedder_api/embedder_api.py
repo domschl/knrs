@@ -34,11 +34,58 @@ from summarizer_core.utils import get_platform_config, get_llm_server_config, wa
 
 # Constants
 DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
-    "model_name": "EmbeddingGemma-300M",
-    "batch_size": 1024
+    "model_name": "EmbeddingGemma-2_Q8",
+    "batch_size": 64
 }
 
-def _embed(url: str, api_key: str | None, model: str, input_path: Path, output_path: Path) -> None:
+# Persistent HTTP session with retry & pooling
+_http_session: requests.Session | None = None
+
+def _get_http_session() -> requests.Session:
+    global _http_session
+    if _http_session is None:
+        from requests.adapters import HTTPAdapter
+        from urllib3.util import Retry
+
+        _http_session = requests.Session()
+        retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[502, 503, 504])
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retries)
+        _http_session.mount("http://", adapter)
+        _http_session.mount("https://", adapter)
+    return _http_session
+
+
+def _apply_prefix(text: str, mode: str, model_name: str) -> str:
+    """Prepend task instruction prefix for models that require asymmetric retrieval formatting."""
+    m = model_name.lower()
+    if any(k in m for k in ("embeddinggemma-2", "embedding-gemma-2", "gemma-embedding2", "gemma2", "gemma_2")):
+        # EmbeddingGemma 2 official retrieval prefixes
+        if mode == "query":
+            if not text.startswith("task:"):
+                return f"task: search result | query: {text}"
+        else:
+            if not text.startswith("title:") and not text.startswith("task:"):
+                return f"title: none | text: {text}"
+    elif any(k in m for k in ("embeddinggemma", "gemma-embedding")):
+        # EmbeddingGemma 1 prefixes
+        if mode == "query":
+            if not text.startswith("task:"):
+                return f"task: search query | input: {text}"
+        else:
+            if not text.startswith("task:"):
+                return f"task: search document | input: {text}"
+    return text
+
+
+def _embed(
+    url: str,
+    api_key: str | None,
+    model: str,
+    input_path: Path,
+    output_path: Path,
+    mode: str = "document",
+    batch_size: int = 64,
+) -> None:
     with input_path.open("r", encoding="utf-8") as f:
         texts: list[str] = json.load(f)
     if not texts:
@@ -48,42 +95,48 @@ def _embed(url: str, api_key: str | None, model: str, input_path: Path, output_p
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    
-    # Use standard OpenAI-compatible embeddings endpoint
-    payload: dict[str, Any] = {
-        "model": model,
-        "input": texts
-    }
-    
-    try:
-        response = requests.post(f"{url}/v1/embeddings", json=payload, headers=headers)
-        response.raise_for_status()
-        data: dict[str, Any] = response.json()
-        
-        embeddings: list[list[float]]
-        # OpenAI format: {"data": [{"embedding": [...], "index": 0}, ...]}
-        if "data" in data and isinstance(data["data"], list):
-            # Sort by index to ensure order if not guaranteed
-            sorted_data = sorted(data["data"], key=lambda x: x.get("index", 0))
-            embeddings = [item["embedding"] for item in sorted_data]
-            np.save(str(output_path), np.array(embeddings, dtype=np.float32))
-        else:
-            logger.error("Unexpected API response format: %s", data)
-            raise ValueError("Malformed API response")
-            
-    except Exception as e:
-        logger.error("Embedding request failed: %s", e)
-        raise
+
+    session = _get_http_session()
+    all_embeddings: list[list[float]] = []
+
+    step = max(1, batch_size)
+    for start_idx in range(0, len(texts), step):
+        batch = texts[start_idx : start_idx + step]
+        formatted = [_apply_prefix(t, mode, model) for t in batch]
+        payload: dict[str, Any] = {
+            "model": model,
+            "input": formatted,
+        }
+
+        try:
+            response = session.post(f"{url}/v1/embeddings", json=payload, headers=headers, timeout=120)
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+
+            if "data" in data and isinstance(data["data"], list):
+                sorted_data = sorted(data["data"], key=lambda x: x.get("index", 0))
+                for item in sorted_data:
+                    all_embeddings.append(item["embedding"])
+            else:
+                logger.error("Unexpected API response format: %s", data)
+                raise ValueError("Malformed API response")
+        except Exception as e:
+            logger.error("Embedding request failed (slice %d-%d): %s", start_idx, start_idx + len(batch), e)
+            raise
+
+    np.save(str(output_path), np.array(all_embeddings, dtype=np.float32))
+
 
 def server_mode() -> None:
     """Persistent server: load config once, serve many batches."""
     server_cfg = get_llm_server_config()
     local_cfg = get_platform_config("embedder_config_api.json", DEFAULT_LOCAL_CONFIG)
-    
+
     url = server_cfg["url"].rstrip("/")
     api_key = server_cfg.get("api_key")
     model = local_cfg["model_name"]
-    
+    batch_size = int(local_cfg.get("batch_size", DEFAULT_LOCAL_CONFIG["batch_size"]))
+
     # Suppress INFO-level noise during serving so it doesn't fight rich bars.
     logging.getLogger().setLevel(logging.WARNING)
     logger.setLevel(logging.WARNING)
@@ -96,15 +149,15 @@ def server_mode() -> None:
             continue
         parts = line.split()
         if len(parts) != 3:
-            # We ignore mode (parts[0]) here as it's always standard embeddings for now
             print(f"ERROR: expected 'MODE INPUT OUTPUT', got {line!r}", flush=True)
             continue
-        input_path, output_path = Path(parts[1]), Path(parts[2])
+        mode, input_path, output_path = parts[0], Path(parts[1]), Path(parts[2])
         try:
-            _embed(url, api_key, model, input_path, output_path)
+            _embed(url, api_key, model, input_path, output_path, mode=mode, batch_size=batch_size)
             print("DONE", flush=True)
         except Exception as exc:
             print(f"ERROR: {exc}", flush=True)
+
 
 def main() -> None:
     w = threading.Thread(target=watchdog, daemon=True)
@@ -117,7 +170,7 @@ def main() -> None:
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        
+
         available_models: list[str] = []
         try:
             response = requests.get(f"{url}/v1/models", headers=headers, timeout=2)
@@ -132,11 +185,11 @@ def main() -> None:
             "type": "embedder",
             "config_file": "embedder_config_api.json",
             "platform": "any",
-            "validated_models": [DEFAULT_LOCAL_CONFIG["model_name"]],
+            "validated_models": ["EmbeddingGemma-2_Q8", "EmbeddingGemma-2_BF16", "EmbeddingGemma-300M"],
             "available_models": available_models,
             "parameters": {
                 "model_name": {"type": "str"},
-                "batch_size": {"type": "int", "min": 1, "max": 512}
+                "batch_size": {"type": "int", "min": 1, "max": 512},
             },
         }
         print(json.dumps(cap))
@@ -149,8 +202,12 @@ def main() -> None:
         url = server_cfg["url"].rstrip("/")
         api_key = server_cfg.get("api_key")
         model = local_cfg["model_name"]
-        
-        _embed(url, api_key, model, Path(sys.argv[3]), Path(sys.argv[4]))
+        batch_size = int(local_cfg.get("batch_size", DEFAULT_LOCAL_CONFIG["batch_size"]))
+        mode = sys.argv[2]
+        input_path = Path(sys.argv[3])
+        output_path = Path(sys.argv[4])
+
+        _embed(url, api_key, model, input_path, output_path, mode=mode, batch_size=batch_size)
     else:
         print("Usage:")
         print("  embedder_api.py --capabilities                     # print capabilities as JSON")

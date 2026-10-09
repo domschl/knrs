@@ -32,7 +32,7 @@ class KnrsConfig:
     embedder_name: str = "embedder_hf"
     agent_backend_name: str = "agent_api"
     calibre_library_name: str = "Calibre_Library"
-    vector_chunk_size: int = 3000    # Chars. Approx 750 tokens. May require --ubatch-size 1024 on llama-server.
+    vector_chunk_size: int = 3000    # Chars. Approx 750 tokens in English, ~2250 in Tibetan. Requires --ubatch-size >= 4096 (e.g. 8192) on llama-server.
     vector_chunk_overlap: int = 600
     checkpoint_every_docs: int = 50
     checkpoint_every_chunks: int = 5000
