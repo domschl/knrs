@@ -47,11 +47,11 @@ logging.basicConfig(
 logger = logging.getLogger("embedder_hf")
 
 MODEL_NAME = "google/embeddinggemma-2"
-ENCODE_BATCH_SIZE = 64
+ENCODE_BATCH_SIZE = 16
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "model_name": "google/embeddinggemma-2",
-    "batch_size": 64,
+    "batch_size": 16,
     "device": "auto",
     "torch_dtype": "bfloat16",
 }
@@ -125,6 +125,38 @@ def _load_model() -> tuple[Any, dict[str, Any]]:
     return model, config
 
 
+def _safe_encode(
+    model: Any,
+    texts: list[str],
+    mode: str,
+    batch_size: int,
+    **kwargs: Any,
+) -> np.ndarray:
+    import torch
+    import numpy as np
+
+    encode_fn = model.encode_query if mode == "query" else model.encode_document
+    try:
+        return encode_fn(texts, batch_size=batch_size, **kwargs)
+    except torch.OutOfMemoryError:
+        logger.warning(
+            "CUDA OOM with batch_size=%d for %d texts; clearing cache and retrying with smaller batch...",
+            batch_size,
+            len(texts),
+        )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if batch_size > 1:
+            return _safe_encode(model, texts, mode, batch_size=max(1, batch_size // 2), **kwargs)
+        elif len(texts) > 1:
+            mid = len(texts) // 2
+            a = _safe_encode(model, texts[:mid], mode, batch_size=1, **kwargs)
+            b = _safe_encode(model, texts[mid:], mode, batch_size=1, **kwargs)
+            return np.concatenate([a, b], axis=0)
+        else:
+            raise
+
+
 def _embed(
     model: Any,
     input_path: Path,
@@ -142,15 +174,11 @@ def _embed(
         return
 
     encode_kwargs: dict[str, Any] = {
-        "batch_size": batch_size,
         "show_progress_bar": False,   # parent's rich bar covers overall progress
         "convert_to_numpy": True,
     }
 
-    if mode == "query":
-        embeddings = model.encode_query(texts, **encode_kwargs)
-    else:
-        embeddings = model.encode_document(texts, **encode_kwargs)
+    embeddings = _safe_encode(model, texts, mode, batch_size=batch_size, **encode_kwargs)
     np.save(str(output_path), embeddings)
     # Release PyTorch's reserved-but-unallocated CUDA memory after each call.
     # Without this, the allocator retains freed KV-cache tensors in its pool
