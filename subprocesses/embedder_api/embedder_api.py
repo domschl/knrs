@@ -110,7 +110,16 @@ def _embed(
 
         try:
             response = session.post(f"{url}/v1/embeddings", json=payload, headers=headers, timeout=120)
-            response.raise_for_status()
+            if response.status_code != 200:
+                err_text = response.text
+                try:
+                    err_json = response.json()
+                    if isinstance(err_json, dict) and "error" in err_json:
+                        err_text = err_json["error"].get("message", response.text)
+                except Exception:
+                    pass
+                raise RuntimeError(f"HTTP {response.status_code}: {err_text}")
+
             data: dict[str, Any] = response.json()
 
             if "data" in data and isinstance(data["data"], list):
