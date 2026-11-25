@@ -56,6 +56,7 @@ class SyncAction:
     opf_path: Path | None = None
     book_dir: Path | None = None
     book: CalibreBook | None = None
+    needs_frontmatter_update: bool = True
 
 
 # ─── Phase 1: Plan ────────────────────────────────────────────────────────────
@@ -131,8 +132,10 @@ def plan_sync(
             book.__dict__.get(k, "") != mi["metadata"].get(k, "")
             for k in _METADATA_KEYS
         )
-        # Check for missing icon or legacy 'icon' field in frontmatter
-        icon_path = icon_root / f"{uuid}.jpg"
+        # Check for missing/stale icon or legacy 'icon' field in frontmatter
+        icon_needs_update = bool(
+            book.cover_path and not icon_is_current(icon_root, uuid, book.cover_path)
+        )
         has_legacy_icon = "icon" in mi["metadata"]
         
         # Check if context is correct (to fix legacy files)
@@ -140,13 +143,17 @@ def plan_sync(
         context_mismatch = mi["metadata"].get("context") != expected_context
 
         # Also update if source_hash was missing from the frontmatter
-        if not mi["source_hash"] or meta_changed or context_mismatch or not icon_path.exists() or has_legacy_icon:
+        fm_needs_update = (
+            not mi["source_hash"] or meta_changed or context_mismatch or has_legacy_icon
+        )
+        if fm_needs_update or icon_needs_update:
             actions.append(SyncAction(
                 action="UPDATE_METADATA", uuid=uuid, title=book.title,
                 old_path=mi["path"],
                 source_hash=book.source_hash,
                 source_format=book.source_format,
                 book=book,
+                needs_frontmatter_update=fm_needs_update,
             ))
             continue
 
@@ -245,12 +252,14 @@ def _execute_action(
                 action.old_path.name if action.old_path else action.title,
             )
             if not dry_run and action.old_path and action.book:
-                _update_meta_fields(action.old_path, action.book,
-                                    extra={"source_hash": action.source_hash,
-                                           "source_format": action.source_format})
-                # Ensure icon exists
-                icon_path = cfg.book_cover_icons / f"{action.uuid}.jpg"
-                if not icon_path.exists() and action.book.cover_path:
+                if action.needs_frontmatter_update:
+                    _update_meta_fields(action.old_path, action.book,
+                                        extra={"source_hash": action.source_hash,
+                                               "source_format": action.source_format})
+                # Ensure icon exists and matches target resolution
+                if action.book.cover_path and not icon_is_current(
+                    cfg.book_cover_icons, action.uuid, action.book.cover_path
+                ):
                     generate_cover_icon(
                         action.book.cover_path, cfg.book_cover_icons,
                         action.book.uuid, dry_run=False

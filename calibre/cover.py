@@ -14,7 +14,7 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-_ICON_HEIGHT = 256   # pixels; width is scaled proportionally
+_ICON_HEIGHT = 512   # pixels; width is scaled proportionally (never upscaled)
 _ICON_QUALITY = 85   # JPEG quality
 
 
@@ -27,6 +27,8 @@ def generate_cover_icon(
 ) -> Path | None:
     """
     Resize *cover_src* to a thumbnail and write it to *icons_dir/<uuid>.jpg*.
+
+    Images with height <= _ICON_HEIGHT are converted to RGB JPEG without upscaling.
 
     Args:
         cover_src:  Source cover.jpg from the Calibre book directory.
@@ -52,10 +54,13 @@ def generate_cover_icon(
         icons_dir.mkdir(parents=True, exist_ok=True)
         with Image.open(cover_src) as img:
             img = img.convert("RGB")   # ensure no RGBA/palette modes
-            h_pct = _ICON_HEIGHT / img.height
-            w_new = max(1, int(img.width * h_pct))
-            resized = img.resize((w_new, _ICON_HEIGHT), Image.Resampling.LANCZOS)
-            resized.save(dest, format="JPEG", quality=_ICON_QUALITY, optimize=True)
+            if img.height > _ICON_HEIGHT:
+                h_pct = _ICON_HEIGHT / img.height
+                w_new = max(1, int(img.width * h_pct))
+                out_img = img.resize((w_new, _ICON_HEIGHT), Image.Resampling.LANCZOS)
+            else:
+                out_img = img
+            out_img.save(dest, format="JPEG", quality=_ICON_QUALITY, optimize=True)
         logger.debug("Icon written: %s", dest)
         return dest
     except Exception as exc:
@@ -63,6 +68,31 @@ def generate_cover_icon(
         return None
 
 
-def icon_is_current(icons_dir: Path, uuid: str) -> bool:
-    """Return True if a cover icon already exists for the given UUID."""
-    return (icons_dir / f"{uuid}.jpg").exists()
+def icon_is_current(
+    icons_dir: Path,
+    uuid: str,
+    cover_src: Path | None = None,
+) -> bool:
+    """Return True if a cover icon exists and meets the target resolution."""
+    dest = icons_dir / f"{uuid}.jpg"
+    if not dest.exists():
+        return False
+
+    try:
+        with Image.open(dest) as img:
+            dest_h = img.height
+    except Exception:
+        return False
+
+    if dest_h >= _ICON_HEIGHT:
+        return True
+
+    if cover_src is not None and cover_src.exists():
+        try:
+            with Image.open(cover_src) as src_img:
+                src_h = src_img.height
+            return dest_h >= min(_ICON_HEIGHT, src_h)
+        except Exception:
+            return True
+
+    return True
